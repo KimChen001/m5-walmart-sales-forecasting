@@ -34,9 +34,10 @@ Run the clone and download steps with a GitHub account that has access to this p
 | XGBoost M1 · Calendar and IDs | 0.5257 | 1.1119 | 84.89% | 0.9384 |
 | XGBoost M2 · Adds price, SNAP and events | 0.5332 | 1.0968 | 83.75% | 0.9938 |
 | **XGBoost M3 · Adds sales history** | 0.6289 | 0.9790 | 74.75% | **0.6812** |
+| TimesFM 3.0 · Sales-only baseline | 0.6121 | 0.8983 | — | — |
 | **TimesFM 3.0 · Fitted decile weights** | **0.6376** | **0.9669** | **73.83%** | 0.8248 |
 
-MIT ORCD jobs `29323394` (XGBoost) and `28701113` (TimesFM). Relative to seasonal naive, M3 reduced MAE by **0.252 units per scored item–store–day** and WRMSSE by **27.4%**. A replenishment simulation with lead times, holding costs and stockout costs is needed to estimate the business impact.
+MIT ORCD jobs `29323394` (XGBoost) `27920694` (TimesFM baseline), and `28701113` (TimesFM adjusted). Relative to seasonal naive, M3 reduced MAE by **0.252 units per scored item–store–day** and WRMSSE by **27.4%**. A replenishment simulation with lead times, holding costs and stockout costs is needed to estimate the business impact.
 
 ## Reproduce the full benchmark
 
@@ -60,6 +61,19 @@ The [training script](xgb_forecast.py) fits XGBoost regressors with Tweedie loss
 R², MAE, and WAPE are computed per item–store–day. [WRMSSE scoring](wrmsse.py) uses trailing 28-day dollar-sales weights across all 12 levels. In the CSV, `WRMSSE` is the 12-level score and `WRMSSE_L12` is the item–store score.
 
 ## Reproduce TimesFM 3.0
+
+The **sales-only baseline** (ORCD job `27920694`) used the same frozen TimesFM 3.0 checkpoint and 28-day backtest. It used sales history for prediction, kept symmetric averaging off, and took the default median forecast. Weekly prices identified which rows to score. The original report did not record WAPE or 12-level WRMSSE for this run.
+
+After installing TimesFM below, run the [baseline script](timesfm_forecast.py) from the repository root on an ORCD GPU compute node:
+
+```bash
+module load miniforge
+eval "$(conda shell.bash hook)"
+conda activate m5
+PYTHONPATH="$PWD/timesfm3_lib${PYTHONPATH:+:$PYTHONPATH}" python timesfm_forecast.py --model 3.0 --state ALL --cat ALL
+```
+
+Baseline outputs go to `outputs/timesfm3_ALL_ALL/`. The adjusted run uses the script and batch job below.
 
 [TimesFM 3.0 evaluation script](timesfm3_improvements.py) uses the same three M5 CSVs, 30,490 series, and chronological 80/20 split as the XGBoost benchmark. It holds the pretrained model weights fixed, adds price, event and historical zero-run features, and fits nine nonnegative decile weights on four windows before the test period. The job compares median forecasts with symmetry off and on, equal decile weights, and fitted decile weights.
 
