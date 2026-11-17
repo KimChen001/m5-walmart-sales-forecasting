@@ -27,6 +27,8 @@ Run the clone and download steps with a GitHub account that has access to this p
 
 ## Results
 
+[Browse original ORCD metrics, window scores, and run output](results/README.md).
+
 | Full panel, 28-day forecasts | R² ↑ | MAE (units) ↓ | WAPE ↓ | M5 WRMSSE (12 levels) ↓ |
 |---|---:|---:|---:|---:|
 | Seasonal naive, lag 28 | 0.3057 | 1.2308 | 93.98% | 0.9378 |
