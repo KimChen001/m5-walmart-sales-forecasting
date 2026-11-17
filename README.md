@@ -29,19 +29,17 @@ The quick run checks the training and scoring pipeline on **5,748 California FOO
 
 [Browse original ORCD metrics, window scores, and run output](results/README.md).
 
-| Full panel, 28-day forecasts | R² ↑ | MAE (units) ↓ | WAPE ↓ | Bias | M5 WRMSSE (12 levels) ↓ |
-|---|---:|---:|---:|---:|---:|
-| Seasonal naive, lag 28 | 0.3057 | 1.2308 | 93.98% | −1.3% | 0.9378 |
-| 28-day moving average | 0.5782 | 1.0204 | 77.91% | −1.5% | 1.0655 |
-| XGBoost M1 · Calendar and IDs | 0.5257 | 1.1119 | 84.89% | −11.0% | 0.9384 |
-| XGBoost M2 · Adds price, SNAP and events | 0.5332 | 1.0968 | 83.75% | −13.4% | 0.9938 |
-| **XGBoost M3 · Adds sales history** | 0.6289 | 0.9790 | 74.75% | −6.6% | **0.6812** |
-| TimesFM 3.0 · Sales-only baseline | 0.6121 | **0.8983** | **68.58%** | −26.7% | 1.6014 |
-| **TimesFM 3.0 · Fitted decile weights** | **0.6376** | 0.9669 | 73.83% | −5.9% | 0.8248 |
+| Full panel, 28-day forecasts | R² ↑ | MAE (units) ↓ | WAPE ↓ | M5 WRMSSE (12 levels) ↓ |
+|---|---:|---:|---:|---:|
+| Seasonal naive, lag 28 | 0.3057 | 1.2308 | 93.98% | 0.9378 |
+| 28-day moving average | 0.5782 | 1.0204 | 77.91% | 1.0655 |
+| XGBoost M1 · Calendar and IDs | 0.5257 | 1.1119 | 84.89% | 0.9384 |
+| XGBoost M2 · Adds price, SNAP and events | 0.5332 | 1.0968 | 83.75% | 0.9938 |
+| **XGBoost M3 · Adds sales history** | 0.6289 | 0.9790 | 74.75% | **0.6812** |
+| TimesFM 3.0 · Sales-only baseline | 0.6121 | **0.8983** | **68.58%** | 1.6014 |
+| **TimesFM 3.0 · Fitted decile weights** | **0.6376** | 0.9669 | 73.83% | 0.8248 |
 
-Bias is predicted total sales divided by actual total sales, minus one. A negative value means the model under-forecasts.
-
-TimesFM leads on item-level R², while XGBoost M3 leads on the 12-level WRMSSE (0.681 against 0.825) and on daily-total RMSE (3,390 against 4,673 units). The sales-only TimesFM run has the lowest MAE and WAPE because it forecasts the median, which minimises absolute error, but it under-forecasts total sales by 26.7%. Fitting the decile weights on training data gives up some MAE to correct that level.
+Between the two main models, TimesFM leads on R², MAE and WAPE, which score each item–store–day on its own, while XGBoost M3 leads on the 12-level WRMSSE (0.681 against 0.825), which also scores sales summed to stores, departments and states. The sales-only TimesFM run has the lowest MAE and WAPE because it forecasts the median, which minimises absolute error, but it under-forecasts total sales by 26.7%. Fitting the decile weights on training data gives up some MAE to correct that level.
 
 MIT ORCD jobs `29323394` (XGBoost), `27920694` (TimesFM baseline), and `28701113` (TimesFM adjusted). Relative to seasonal naive, M3 reduced MAE by **0.252 units per scored item–store–day** and WRMSSE by **27.4%**. A replenishment simulation with lead times, holding costs and stockout costs is needed to estimate the business impact.
 
@@ -49,13 +47,13 @@ MIT ORCD jobs `29323394` (XGBoost), `27920694` (TimesFM baseline), and `28701113
 
 The same job reran each model with sales history updated every day, which matches the setting of the regression experiment. Seasonal naive, M1 and M2 do not use recent sales, so their scores are unchanged and are omitted.
 
-| Full panel, next-day forecasts | R² ↑ | MAE (units) ↓ | WAPE ↓ | Bias | M5 WRMSSE (12 levels) ↓ |
-|---|---:|---:|---:|---:|---:|
-| Same as yesterday | 0.4666 | 1.1233 | 85.76% | −0.2% | 1.1184 |
-| 28-day moving average | 0.6304 | 0.9757 | 74.50% | −0.9% | 1.0486 |
-| **XGBoost M3 · Adds sales history** | **0.7058** | **0.9108** | **69.54%** | −2.0% | **0.5249** |
+| Full panel, next-day forecasts | R² ↑ | MAE (units) ↓ | WAPE ↓ | M5 WRMSSE (12 levels) ↓ |
+|---|---:|---:|---:|---:|
+| Same as yesterday | 0.4666 | 1.1233 | 85.76% | 1.1184 |
+| 28-day moving average | 0.6304 | 0.9757 | 74.50% | 1.0486 |
+| **XGBoost M3 · Adds sales history** | **0.7058** | **0.9108** | **69.54%** | **0.5249** |
 
-Moving M3 from a 28-day to a next-day schedule lowers WRMSSE from 0.681 to 0.525 and daily-total MAPE from 6.9% to 3.5%. The under-forecast narrows from 6.6% to 2.0%.
+Moving M3 from a 28-day to a next-day schedule raises R² from 0.629 to 0.706 and lowers MAE from 0.979 to 0.911, WAPE from 74.75% to 69.54% and WRMSSE from 0.681 to 0.525.
 
 ## Reproduce the full benchmark
 
