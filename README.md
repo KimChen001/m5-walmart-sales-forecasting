@@ -65,7 +65,7 @@ mkdir -p logs
 sbatch cluster/run_xgb_both.sbatch
 ```
 
-The [training script](xgb_forecast.py) fits XGBoost regressors with Tweedie loss. It trains on days 1–1,553 and tests on days 1,554–1,941. Early stopping uses the final 90 training days before refitting. The 28-day backtest uses 14 rolling windows and scores 24 days in the last window. The next-day experiment updates sales history daily and writes to its own output directory.
+The [training script](xgb_forecast.py) fits XGBoost regressors with Tweedie loss. It trains on days 1–1,553 and tests on days 1,554–1,941. Early stopping uses the final 90 training days before refitting. The 28-day backtest uses 14 rolling windows and scores 24 days in the last window. Sales-history features (lags of 1 to 364 days and 7- to 180-day rolling means) are measured at each window's forecast origin, so every day in a window sees the same information, and a `days_ahead` feature tells the model how far ahead it is forecasting. The next-day experiment (`--horizon 1`) moves the origin to the previous day, updates sales history daily, and writes to its own output directory.
 
 | Output | Location |
 |---|---|
