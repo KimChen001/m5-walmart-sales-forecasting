@@ -1,30 +1,41 @@
 # M5 Walmart Sales Forecasting
 
-15.071 Project 1 · Predictive AI · November 20, 2026
+**15.071 Project 1 · Predictive AI · November 20, 2026**
 
-## Prediction task
+Forecast the next 28 days of unit sales for each item in each store to support replenishment planning. The current benchmark covers **30,490 item–store series**, **10 Walmart stores**, and **388 held-out days**.
 
-Forecast daily units sold for each product in each store to support replenishment and sales planning. The main evaluation uses a 28-day forecast horizon. A separate next-day experiment measures performance when the latest sales are available every day.
+[Download the M5 data ZIP](https://github.com/KimChen001/m5-walmart-sales-forecasting/releases/download/m5-data-v1/m5-forecasting-accuracy.zip) · [Run locally](#run-locally) · [Reproduce the full benchmark](#reproduce-the-full-benchmark) · [Results](#results)
 
-The M5 Walmart data contains 30,490 item–store series across 10 stores and 1,941 days. The model uses item and store IDs, calendar features, weekly prices, events, state SNAP indicators, and sales history available at forecast time. The target is unit sales, a nonnegative count.
+## Run locally
 
-## Methods and validation
+Clone the repository and download `m5-forecasting-accuracy.zip` from the link above. In PowerShell, replace the ZIP path if your browser saved it elsewhere.
 
-The implementation trains XGBoost regressors with a Tweedie objective. M1 uses calendar features and IDs, M2 adds price, SNAP, and events, and M3 adds lagged sales and rolling statistics. Seasonal naive and moving average forecasts provide benchmarks. The chronological split uses days 1–1,553 for training and days 1,554–1,941 for testing. Early stopping uses the final 90 training days, followed by refitting on the training period. The 28-day test uses 14 forecast windows, with 24 days scored in the last window. The batch job scores both the full panel and a 6,638-series subset defined by sales frequency in training.
+```powershell
+git clone https://github.com/KimChen001/m5-walmart-sales-forecasting.git
+cd m5-walmart-sales-forecasting
+Expand-Archive -LiteralPath "$env:USERPROFILE\Downloads\m5-forecasting-accuracy.zip" -DestinationPath .
+python -m pip install "xgboost==3.4.1" "pandas==3.0.6" "numpy==2.5.3" "scikit-learn==1.9.1"
+python xgb_forecast.py --state CA --cat FOODS --device cpu --quick
+Import-Csv outputs/xgb_CA_FOODS_quick/metrics_overall.csv | Format-Table R2,MAE,WAPE,WRMSSE
+```
 
-| Full panel, 28-day forecasts | Item–store–day R² ↑ | MAE (units) ↓ | WAPE ↓ | M5 WRMSSE (12 levels) ↓ |
+Run the clone and download steps with a GitHub account that has access to this private repository. The quick run checks the training and scoring pipeline on **5,748 California FOODS series** with a reduced tree budget. It completed in approximately **3 minutes** on the development machine. The scripts read `calendar.csv`, `sales_train_evaluation.csv`, and `sell_prices.csv` from the repository root. The [official Kaggle data page](https://www.kaggle.com/competitions/m5-forecasting-accuracy/data) documents the files.
+
+## Results
+
+| Full panel, 28-day forecasts | R² ↑ | MAE (units) ↓ | WAPE ↓ | M5 WRMSSE (12 levels) ↓ |
 |---|---:|---:|---:|---:|
 | Seasonal naive, lag 28 | 0.3057 | 1.2308 | 93.98% | 0.9378 |
 | 28-day moving average | 0.5782 | 1.0204 | 77.91% | 1.0655 |
-| XGBoost M1 | 0.5257 | 1.1119 | 84.89% | 0.9384 |
-| XGBoost M2 | 0.5332 | 1.0968 | 83.75% | 0.9938 |
-| XGBoost M3 | 0.6289 | 0.9790 | 74.75% | 0.6812 |
+| XGBoost M1 · Calendar and IDs | 0.5257 | 1.1119 | 84.89% | 0.9384 |
+| XGBoost M2 · Adds price, SNAP and events | 0.5332 | 1.0968 | 83.75% | 0.9938 |
+| **XGBoost M3 · Adds sales history** | **0.6289** | **0.9790** | **74.75%** | **0.6812** |
 
-Source: MIT ORCD job `29323394`. WRMSSE uses 12 hierarchy levels and trailing 28-day dollar-sales weights. M3 reduces absolute forecast error by about **0.252 units per scored item–store–day** relative to seasonal naive and reduces WRMSSE by **27.4%**. Translating these gains into cost or service improvements requires a replenishment simulation with lead times, holding costs and stockout costs. This run measures forecasting accuracy.
+MIT ORCD job `29323394`. Relative to seasonal naive, M3 reduced MAE by **0.252 units per scored item–store–day** and WRMSSE by **27.4%**. A replenishment simulation with lead times, holding costs and stockout costs is needed to estimate the business impact.
 
-## Reproduce on MIT ORCD
+## Reproduce the full benchmark
 
-Place `calendar.csv`, `sales_train_evaluation.csv` and `sell_prices.csv` from the [M5 Forecasting Accuracy dataset](https://www.kaggle.com/competitions/m5-forecasting-accuracy/data) in the repository root. If you already have the ZIP, extract those three files into the root. On Windows, run `Expand-Archive -LiteralPath <path-to-zip> -DestinationPath .` from the repository root. Kaggle requires sign-in and acceptance of the competition rules to obtain the data.
+On MIT ORCD, place the three CSVs next to `xgb_forecast.py` and submit the batch job from the repository root.
 
 ```bash
 bash cluster/setup_env.sh  # first run only
@@ -32,10 +43,15 @@ mkdir -p logs
 sbatch cluster/run_xgb_both.sbatch
 ```
 
-The job trains both horizons on CPU and saves results in `outputs/xgb_ALL_ALL/` and `outputs/xgb_ALL_ALL_h1/`. Read `metrics_overall.csv` for all four full-panel metrics and `metrics_final_regular50.csv` for the regular-seller subset. In the CSV, `WRMSSE` covers all levels and `WRMSSE_L12` is the item–store level alone.
+The [training script](xgb_forecast.py) fits XGBoost regressors with Tweedie loss. It trains on days 1–1,553 and tests on days 1,554–1,941. Early stopping uses the final 90 training days before refitting. The 28-day backtest uses 14 rolling windows and scores 24 days in the last window. The next-day experiment updates sales history daily and writes to its own output directory.
 
-For a local smoke test, install the dependencies with `python -m pip install pandas numpy xgboost scikit-learn` and run `python xgb_forecast.py --state CA --cat FOODS --device cpu --quick`. The subset and reduced tree budget are for verification.
+| Output | Location |
+|---|---|
+| 28-day forecasts | `outputs/xgb_ALL_ALL/` |
+| Next-day forecasts | `outputs/xgb_ALL_ALL_h1/` |
+| Full-panel scores | `metrics_overall.csv` in either directory |
+| Regular-seller scores | `metrics_final_regular50.csv` in either directory |
 
-## Team contributions
+R², MAE, and WAPE are computed per item–store–day. [WRMSSE scoring](wrmsse.py) uses trailing 28-day dollar-sales weights across all 12 levels. In the CSV, `WRMSSE` is the 12-level score and `WRMSSE_L12` is the item–store score.
 
-XGBoost implementation — Zhixin. Planned additions are OLS (Kayla), the neural network (Marco), and TimesFM 3.0 (Kayla, Zhixin and Marco).
+**Team contributions** · XGBoost by Zhixin. Planned additions include OLS by Kayla, the neural network by Marco, and TimesFM 3.0 by Kayla, Zhixin, and Marco.
