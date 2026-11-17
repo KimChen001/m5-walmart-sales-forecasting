@@ -34,10 +34,10 @@ Run the clone and download steps with a GitHub account that has access to this p
 | XGBoost M1 · Calendar and IDs | 0.5257 | 1.1119 | 84.89% | 0.9384 |
 | XGBoost M2 · Adds price, SNAP and events | 0.5332 | 1.0968 | 83.75% | 0.9938 |
 | **XGBoost M3 · Adds sales history** | 0.6289 | 0.9790 | 74.75% | **0.6812** |
-| TimesFM 3.0 · Sales-only baseline | 0.6121 | 0.8983 | — | — |
+| TimesFM 3.0 · Sales-only baseline | 0.6121 | 0.8983 | 68.58% | 1.6014 |
 | **TimesFM 3.0 · Fitted decile weights** | **0.6376** | **0.9669** | **73.83%** | 0.8248 |
 
-MIT ORCD jobs `29323394` (XGBoost) `27920694` (TimesFM baseline), and `28701113` (TimesFM adjusted). Relative to seasonal naive, M3 reduced MAE by **0.252 units per scored item–store–day** and WRMSSE by **27.4%**. A replenishment simulation with lead times, holding costs and stockout costs is needed to estimate the business impact.
+MIT ORCD jobs `29323394` (XGBoost), `27920694` (TimesFM baseline), and `28701113` (TimesFM adjusted). Relative to seasonal naive, M3 reduced MAE by **0.252 units per scored item–store–day** and WRMSSE by **27.4%**. A replenishment simulation with lead times, holding costs and stockout costs is needed to estimate the business impact.
 
 ## Reproduce the full benchmark
 
@@ -62,7 +62,7 @@ R², MAE, and WAPE are computed per item–store–day. [WRMSSE scoring](wrmsse.
 
 ## Reproduce TimesFM 3.0
 
-The **sales-only baseline** (ORCD job `27920694`) used the same frozen TimesFM 3.0 checkpoint and 28-day backtest. It used sales history for prediction, kept symmetric averaging off, and took the default median forecast. Weekly prices identified which rows to score. The original report did not record WAPE or 12-level WRMSSE for this run.
+The **sales-only baseline** (ORCD job `27920694`) used the same frozen TimesFM 3.0 checkpoint and 28-day backtest. It used sales history for prediction, kept symmetric averaging off, and took the default median forecast. Weekly prices identified which rows to score. WAPE and 12-level WRMSSE were calculated from the archived predictions. Baseline WRMSSE sets positions without saved forecasts to zero using the same scoring script as XGBoost.
 
 After installing TimesFM below, run the [baseline script](timesfm_forecast.py) from the repository root on an ORCD GPU compute node:
 
@@ -88,6 +88,6 @@ sbatch cluster/run_timesfm3_gpu.sbatch
 
 The job first checks 16 series and then runs the full backtest, downloading the [Google checkpoint](https://huggingface.co/google/timesfm-3.0-pytorch) if needed. Outputs are under `outputs/timesfm3_<job_id>/full/`. Read `metrics_overall.csv` for the four configurations, `wrmsse_by_window.csv` for the 14 window scores, and `decile_weights.csv` for the fitted weights. Job `28701113` completed in 4 h 15 min on one GPU.
 
-Both models report rolling WRMSSE across 12 M5 hierarchy levels. XGBoost zero-fills positions outside its scored rows when constructing the WRMSSE panel. TimesFM scores its complete forecast panel, so the WRMSSE comparison retains that implementation difference.
+Both models report rolling WRMSSE across 12 M5 hierarchy levels. XGBoost zero-fills positions outside its scored rows when constructing the WRMSSE panel. The adjusted TimesFM run scores its complete forecast panel, so the WRMSSE comparison retains that implementation difference.
 
 **Team contributions** · XGBoost by Zhixin. TimesFM 3.0 by Kayla, Zhixin, and Marco. Upcoming code contributions include OLS by Kayla and the neural network by Marco.
