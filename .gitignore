@@ -1,4 +1,5 @@
 *.csv
+!results/**/*.csv
 *.csv.gz
 outputs/
 logs/
