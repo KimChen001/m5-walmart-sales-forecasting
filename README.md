@@ -23,7 +23,7 @@ python xgb_forecast.py --state CA --cat FOODS --device cpu --quick
 Import-Csv outputs/xgb_CA_FOODS_quick/metrics_overall.csv | Format-Table R2,MAE,WAPE,WRMSSE
 ```
 
-Run the clone and download steps with a GitHub account that has access to this private repository. The quick run checks the training and scoring pipeline on **5,748 California FOODS series** with a reduced tree budget. It completed in approximately **3 minutes** on the development machine. The scripts read `calendar.csv`, `sales_train_evaluation.csv`, and `sell_prices.csv` from the repository root. The [official Kaggle data page](https://www.kaggle.com/competitions/m5-forecasting-accuracy/data) documents the files.
+The quick run checks the training and scoring pipeline on **5,748 California FOODS series** with a reduced tree budget. It completed in approximately **3 minutes** on the development machine. The scripts read `calendar.csv`, `sales_train_evaluation.csv`, and `sell_prices.csv` from the repository root. The [official Kaggle data page](https://www.kaggle.com/competitions/m5-forecasting-accuracy/data) documents the files.
 
 ## Results
 
@@ -36,10 +36,24 @@ Run the clone and download steps with a GitHub account that has access to this p
 | XGBoost M1 · Calendar and IDs | 0.5257 | 1.1119 | 84.89% | 0.9384 |
 | XGBoost M2 · Adds price, SNAP and events | 0.5332 | 1.0968 | 83.75% | 0.9938 |
 | **XGBoost M3 · Adds sales history** | 0.6289 | 0.9790 | 74.75% | **0.6812** |
-| TimesFM 3.0 · Sales-only baseline | 0.6121 | 0.8983 | 68.58% | 1.6014 |
-| **TimesFM 3.0 · Fitted decile weights** | **0.6376** | **0.9669** | **73.83%** | 0.8248 |
+| TimesFM 3.0 · Sales-only baseline | 0.6121 | **0.8983** | **68.58%** | 1.6014 |
+| **TimesFM 3.0 · Fitted decile weights** | **0.6376** | 0.9669 | 73.83% | 0.8248 |
+
+Between the two main models, TimesFM leads on R², MAE and WAPE, which score each item–store–day on its own, while XGBoost M3 leads on the 12-level WRMSSE (0.681 against 0.825), which also scores sales summed to stores, departments and states. The sales-only TimesFM run has the lowest MAE and WAPE because it forecasts the median, which minimises absolute error, but it under-forecasts total sales by 26.7%. Fitting the decile weights on training data gives up some MAE to correct that level.
 
 MIT ORCD jobs `29323394` (XGBoost), `27920694` (TimesFM baseline), and `28701113` (TimesFM adjusted). Relative to seasonal naive, M3 reduced MAE by **0.252 units per scored item–store–day** and WRMSSE by **27.4%**. A replenishment simulation with lead times, holding costs and stockout costs is needed to estimate the business impact.
+
+### Next-day forecasts
+
+The same job reran each model with sales history updated every day, which matches the setting of the regression experiment. Seasonal naive, M1 and M2 do not use recent sales, so their scores are unchanged and are omitted.
+
+| Full panel, next-day forecasts | R² ↑ | MAE (units) ↓ | WAPE ↓ | M5 WRMSSE (12 levels) ↓ |
+|---|---:|---:|---:|---:|
+| Same as yesterday | 0.4666 | 1.1233 | 85.76% | 1.1184 |
+| 28-day moving average | 0.6304 | 0.9757 | 74.50% | 1.0486 |
+| **XGBoost M3 · Adds sales history** | **0.7058** | **0.9108** | **69.54%** | **0.5249** |
+
+Moving M3 from a 28-day to a next-day schedule raises R² from 0.629 to 0.706 and lowers MAE from 0.979 to 0.911, WAPE from 74.75% to 69.54% and WRMSSE from 0.681 to 0.525.
 
 ## Reproduce the full benchmark
 
@@ -51,7 +65,7 @@ mkdir -p logs
 sbatch cluster/run_xgb_both.sbatch
 ```
 
-The [training script](xgb_forecast.py) fits XGBoost regressors with Tweedie loss. It trains on days 1–1,553 and tests on days 1,554–1,941. Early stopping uses the final 90 training days before refitting. The 28-day backtest uses 14 rolling windows and scores 24 days in the last window. The next-day experiment updates sales history daily and writes to its own output directory.
+The [training script](xgb_forecast.py) fits XGBoost regressors with Tweedie loss. It trains on days 1–1,553 and tests on days 1,554–1,941. Early stopping uses the final 90 training days before refitting. The 28-day backtest uses 14 rolling windows and scores 24 days in the last window. Sales-history features (lags of 1 to 364 days and 7- to 180-day rolling means) are measured at each window's forecast origin, so every day in a window sees the same information, and a `days_ahead` feature tells the model how far ahead it is forecasting. The next-day experiment (`--horizon 1`) moves the origin to the previous day, updates sales history daily, and writes to its own output directory.
 
 | Output | Location |
 |---|---|
