@@ -1,6 +1,6 @@
 # Full results
 
-[← Back to the overview](../README.md) · [Code and notebooks](code.md) · [Run and reproduce](reproduce.md) · [Archived ORCD outputs](../results/README.md)
+[← README](../README.md) · [Business overview](overview.md) · [Code and notebooks](code.md) · [Run and reproduce](reproduce.md) · [Archived ORCD outputs](../results/README.md)
 
 All scores cover the full panel of 30,490 item–store series and the test period from May 2015 to May 2016.
 
@@ -18,7 +18,7 @@ All scores cover the full panel of 30,490 item–store series and the test perio
 
 Between the two main models, TimesFM leads on R², MAE and WAPE, which score each item–store–day on its own, while XGBoost M3 leads on the 12-level WRMSSE (0.681 against 0.825), which also scores sales summed to stores, departments and states. The sales-only TimesFM run has the lowest MAE and WAPE because it forecasts the median, which minimises absolute error, but it under-forecasts total sales by 26.7%. Fitting the decile weights on training data gives up some MAE to correct that level.
 
-MIT ORCD jobs `29323394` (XGBoost), `27920694` (TimesFM baseline), and `28701113` (TimesFM adjusted). Relative to seasonal naive, M3 reduced MAE by **0.252 units per scored item–store–day** and WRMSSE by **27.4%**. [Business impact](../README.md#business-impact) translates these errors into inventory dollars.
+MIT ORCD jobs `29323394` (XGBoost), `27920694` (TimesFM baseline), and `28701113` (TimesFM adjusted). Relative to seasonal naive, M3 reduced MAE by **0.252 units per scored item–store–day** and WRMSSE by **27.4%**. [Business impact](overview.md#business-impact) translates these errors into inventory dollars.
 
 ## TimesFM in the presentation
 

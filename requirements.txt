@@ -1,0 +1,14 @@
+# Tested with Python 3.13. Covers the XGBoost pipeline, WRMSSE scoring, and the
+# EDA, regression and XGBoost results notebooks.
+xgboost==3.4.1
+pandas==3.0.6
+numpy==2.5.3
+scikit-learn==1.9.1
+scipy==1.18.1
+statsmodels==0.15.0
+joblib==1.6.0
+matplotlib==3.11.2
+seaborn==0.13.2
+notebook>=7
+# LSTM notebook: also install torch (a GPU is recommended).
+# TimesFM 3.0: see docs/reproduce.md (GPU, timesfm==3.0.2).
