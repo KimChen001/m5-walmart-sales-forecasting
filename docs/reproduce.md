@@ -1,10 +1,10 @@
 # Run and reproduce
 
-[← Back to the overview](../README.md) · [Full results](results.md) · [Code and notebooks](code.md) · [Archived ORCD outputs](../results/README.md)
+[← README](../README.md) · [Business overview](overview.md) · [Full results](results.md) · [Code and notebooks](code.md) · [Archived ORCD outputs](../results/README.md)
 
 ## Run locally
 
-Getting the data, the 3-minute XGBoost check and the notebooks are covered on the overview page under [Run the code](../README.md#run-the-code). The [official Kaggle data page](https://www.kaggle.com/competitions/m5-forecasting-accuracy/data) documents the three CSV files.
+Getting the data, the 3-minute XGBoost check and the notebooks are covered in the README under [Run the code](../README.md#run-the-code). The [official Kaggle data page](https://www.kaggle.com/competitions/m5-forecasting-accuracy/data) documents the three CSV files.
 
 ## Reproduce the full XGBoost benchmark
 

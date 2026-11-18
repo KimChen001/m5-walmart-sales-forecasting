@@ -2,148 +2,83 @@
 
 **15.071 Project 1 · Predictive AI · November 20, 2026**
 
-![Project overview showing the retail forecasting problem, M5 dataset, models and baselines](docs/project-overview.png)
+We forecast daily unit sales for 30,490 item–store series in 10 Walmart stores to set safety stock. The best model, V6, has 8% less error than the stores' 28-day moving-average rule, which frees about **$148k** of inventory; re-forecasting XGBoost daily instead of every 4 weeks cuts its WRMSSE by **23%**.
 
-We forecast daily unit sales for every item in every store, 30,490 series across 10 Walmart stores, and translate forecast accuracy into inventory dollars. The best model frees about $148k of safety stock, and re-forecasting daily instead of every 4 weeks improves accuracy more than any choice between models.
+**Contents** · [Task and data](#task-and-data) · [Models and results](#models-and-results) · [Improvement: re-forecast daily](#improvement-re-forecast-daily) · [Run the code](#run-the-code) · [Repository map](#repository-map) · [Limitations](#limitations)
 
-**Run the code:** [get the data and run a 3-minute check](#run-the-code).
+**More** · [Business overview](docs/overview.md) · [Full results](docs/results.md) · [Code by model](docs/code.md) · [Cluster runs](docs/reproduce.md)
 
-## Contents
+## Task and data
 
-1. [The business problem](#the-business-problem): the decision the forecast supports
-2. [Our approach](#our-approach): the prediction task and the models
-3. [What we found](#what-we-found): accuracy across models
-4. [The improvement: re-forecast daily](#the-improvement-re-forecast-daily): same model, fresher data
-5. [Business impact](#business-impact): what the accuracy is worth
-6. [Recommendation](#recommendation): what to do next
-7. [Run the code](#run-the-code): data, a 3-minute check, and the notebooks
-8. [Go deeper](#go-deeper): full results, code by model, and the cluster runs
+| | |
+|---|---|
+| **Data** | Kaggle M5: daily unit sales of 3,049 items in 10 stores (CA, TX, WI), Jan 2011 – May 2016, with weekly prices, events and SNAP days |
+| **Target** | Units sold per item, store and day |
+| **Split** | Train d_1–d_1553 (to Apr 2015) · test d_1554–d_1941 (388 days) · last 90 training days for early stopping |
+| **Protocol** | Forecast 28 days ahead from 14 rolling origins, using only data known at each origin |
+| **Cleaning** | Weekly prices mapped to days; days before an item's first price are dropped, since they are not real zero demand |
+| **Metrics** | R², MAE and WAPE per item–store–day; M5 WRMSSE over 12 aggregation levels |
 
-## The business problem
+## Models and results
 
-Every day, each store decides how much of each item to stock. Too little loses sales and frustrates customers; too much ties up cash and lets food spoil. We take a 28-day moving average, revised every 4 weeks, as the stores' current rule. A more accurate forecast of daily unit sales per item and store lets them hold less safety stock for the same in-stock rate.
+28-day forecasts on all 30,490 series, test year May 2015 – May 2016. Bold marks the best value in each column.
 
-## Our approach
-
-**The prediction task.** Forecast the units sold of every item in every store for each of the next 28 days, re-forecasting every 4 weeks to match the re-order cycle. Inputs are past sales, weekly prices, calendar events and SNAP days. Every model trains on the first 80% of days and is scored on the last 20%, about 13 months from the end of April 2015 that no model sees during training.
-
-| Model | How it works | Code |
-|---|---|---|
-| Seasonal naive, 28-day moving average | Rules a store can run today without a model | — |
-| OLS, Ridge and LASSO | Regularised regression on next-day forecasts | [Notebook](notebooks/regression_ols_ridge_lasso.ipynb) |
-| XGBoost | Gradient-boosted trees on calendar, price and recent sales; one model for all series | [Results notebook](notebooks/xgboost_full_panel.ipynb) · [script](xgb_forecast.py) |
-| LSTM | One neural network for all series, reading 112 days of history | [Notebook](notebooks/lstm_d1553.ipynb) |
-| TimesFM 3.0 | Google's pretrained forecasting model, used zero-shot, one series at a time | [Notebook](notebooks/timesfm3_v3_v6.ipynb) |
-| V6 ensemble | Averages TimesFM 3.0 with recursive boosted trees | [Notebook](notebooks/timesfm3_v3_v6.ipynb) |
-
-Accuracy is measured four ways: R², MAE and WAPE on each item–store–day, and the M5 WRMSSE, which also scores sales added up to stores, departments and states (12 levels).
-
-## What we found
-
-1. **Recent sales drive accuracy.** Adding lagged sales to XGBoost cut WRMSSE from 0.994 to 0.681; price, SNAP and events added little on their own.
-2. **Past that, complexity buys little.** XGBoost, the LSTM, TimesFM 3.0 and V6 all reach R² 0.63 to 0.64. TimesFM 3.0 has the highest R² of the single models, while the models that learn across series are better on store and state totals (WRMSSE 0.649 for recursive boosted trees, 0.660 for the LSTM and 0.681 for XGBoost, against 0.744 for TimesFM 3.0).
-3. **How TimesFM's output is read matters more than tuning the model.** Its raw outputs under-report right-skewed sales; reading them as a calibrated mean cut the total-sales bias from −7.0% to −0.8% and WRMSSE from 0.830 to 0.744.
-
-![Bar charts of item-level R² and 12-level WRMSSE for each model on the full panel, with XGBoost M3 re-forecast daily shown separately](docs/accuracy-by-model.png)
-
-## The improvement: re-forecast daily
-
-Today's cycle forecasts 28 days at once, so by the fourth week the forecast is working from sales that are four weeks old. Re-forecasting every morning lets each day's forecast see yesterday's sales. We tested this with XGBoost M3, changing only the schedule: same model, same features, no retraining.
-
-![Two timelines of 28 days: one forecast made every 4 weeks, so later days use older sales data, against a new forecast every morning that always uses yesterday's sales](docs/improvement-daily.png)
-
-| XGBoost M3, full panel | R² ↑ | MAE (units) ↓ | WAPE ↓ | M5 WRMSSE (12 levels) ↓ |
+| Model | R² ↑ | MAE ↓ | WAPE ↓ | WRMSSE ↓ |
 |---|---:|---:|---:|---:|
-| Re-forecast every 4 weeks | 0.6289 | 0.9790 | 74.75% | 0.6812 |
-| **Re-forecast every day** | **0.7058** | **0.9108** | **69.54%** | **0.5249** |
+| Seasonal naive (same weekday 4 weeks earlier) | 0.306 | 1.231 | 94.0% | 0.938 |
+| 28-day moving average (the stores' current rule) | 0.578 | 1.020 | 77.9% | 1.066 |
+| XGBoost M3: calendar, price, events and lagged sales | 0.629 | **0.979** | **74.7%** | 0.681 |
+| LSTM: one network for all series, 112 days of history | 0.636 | 0.986 | 75.4% | **0.660** |
+| TimesFM 3.0 V3: pretrained, zero-shot | 0.642 | 0.988 | 75.5% | 0.744 |
+| V6: TimesFM 3.0 V3 + recursive boosted trees | **0.643** | 0.984 | 75.2% | 0.716 |
 
-The R² gain is more than five times the spread between XGBoost, the LSTM, TimesFM 3.0 and V6 (0.629 to 0.643), and these are the highest R² and lowest WRMSSE of any run on the full panel. WRMSSE falls most for totals: by 41% for total chain sales and by 7% for single item–store series. The gain applies to decisions made a day ahead; orders placed further ahead would gain less.
+For TimesFM 3.0 V3 and V6, R² is OSR² (benchmarked on the training mean) and the test starts one day earlier. The LSTM is scored on all item–days, the others on days the item is on the shelf. OLS, Ridge and LASSO answer a next-day task on sampled rows ([notebook](notebooks/regression_ols_ridge_lasso.ipynb)).
 
-## Business impact
+- **Recent sales are the signal.** Adding lagged sales to XGBoost lifts R² from 0.533 to 0.629 and cuts WRMSSE from 0.994 to 0.681; price, SNAP and events add almost nothing on their own.
+- **The trained models tie on single items and differ on totals.** They sit within 0.015 R² of each other, while the models that learn across series lead on WRMSSE.
+- **Business impact.** Safety stock scales with forecast error: V6 frees about $148k of inventory at a 95% in-stock target, or $37k a year in holding cost; XGBoost M3 frees $115k and needs no GPU. Assumptions are in the [business overview](docs/overview.md#business-impact).
 
-V6 forecasts with 8.0% less error than today's 28-day rule (RMSE 2.171 against 2.36). Safety stock scales with forecast error, so for the 10 stores and roughly $45M of annual sales in the data:
+## Improvement: re-forecast daily
 
-| Model | Forecast error vs today's rule | Inventory freed at the same 95% in-stock target |
-|---|---:|---:|
-| **V6: TimesFM 3.0 + boosted trees** | **−8.0%** | **$148k** |
-| TimesFM 3.0 alone | −7.9% | $146k |
-| LSTM | −7.1% | $131k |
-| XGBoost M3 | −6.2% | $115k |
-| Boosted trees alone | +0.5% | −$10k |
+The same XGBoost M3 model and features, re-forecast every morning from yesterday's sales instead of every 4 weeks ([concept figure](docs/overview.md#the-improvement-re-forecast-daily)):
 
-Holding that $148k of inventory costs about $37k a year. Alternatively, keeping inventory unchanged raises the chance of no stock-out in a 4-week cycle from 95.0% to 96.3%, cutting lost sales by about 35%, or about $143k a year. XGBoost M3 needs no GPU: it trains on CPU, and both of its schedules ran in 3 h 15 min on 32 ORCD cores. TimesFM 3.0 and V6 need a GPU.
+| XGBoost M3, all 30,490 series | R² ↑ | MAE ↓ | WAPE ↓ | WRMSSE ↓ |
+|---|---:|---:|---:|---:|
+| Re-forecast every 4 weeks | 0.629 | 0.979 | 74.7% | 0.681 |
+| **Re-forecast every day** | **0.706** | **0.911** | **69.5%** | **0.525** |
 
-<details>
-<summary>Assumptions</summary>
-
-Safety stock is 1.645 × the standard deviation of each item-store's 28-day forecast error under today's rule ($1.85M at cost), scaled by each model's RMSE relative to that rule on the same rows. RMSE is used here because safety stock depends on the spread of forecast errors. Cost is 75.4% of price (Walmart FY2016 gross margin 24.6%), and holding cost is 25% a year.
-
-</details>
-
-## Recommendation
-
-- **Adopt V6 for replenishment forecasts**, starting with a pilot in one store per state against matched stores that stay on the 28-day rule. Judge it on in-stock rate, inventory value and food waste, not on forecast error alone.
-- **Refresh the models every 4 weeks**: rerun TimesFM, refit the trees and relearn the ensemble weights. Keep TimesFM alone as the fallback, since it delivers most of the gain by itself.
-- **Move to daily re-forecasting next.** It cut XGBoost's WRMSSE by 23% with no new model. Where no GPU is available, XGBoost M3 is the CPU option, with 6.2% less error than today's rule.
-- **Collect inventory data**, so that stock-outs stop looking like zero demand.
-
-![Recommendation slide: why the V6 ensemble, inventory freed against today's 28-day rule, and the roll-out plan](docs/recommendation.png)
+The gain is largest for totals: WRMSSE falls 41% for chain-wide sales and 7% for single item–store series.
 
 ## Run the code
 
-Everything in this section runs on a laptop CPU. It was tested with Python 3.13.
-
-**1. Get the code and the data.** In Windows PowerShell:
-
-```powershell
-git clone https://github.com/KimChen001/m5-walmart-sales-forecasting.git
-cd m5-walmart-sales-forecasting
-Invoke-WebRequest https://github.com/KimChen001/m5-walmart-sales-forecasting/releases/download/m5-data-v1/m5-forecasting-accuracy.zip -OutFile m5.zip
-Expand-Archive m5.zip -DestinationPath .
-```
-
-On macOS or Linux:
+Download the [M5 data ZIP (48 MB)](https://github.com/KimChen001/m5-walmart-sales-forecasting/releases/download/m5-data-v1/m5-forecasting-accuracy.zip) and unzip it into the repository root, so that `calendar.csv`, `sales_train_evaluation.csv` and `sell_prices.csv` sit next to `xgb_forecast.py`. Tested with Python 3.13.
 
 ```bash
 git clone https://github.com/KimChen001/m5-walmart-sales-forecasting.git
 cd m5-walmart-sales-forecasting
-curl -L -o m5.zip https://github.com/KimChen001/m5-walmart-sales-forecasting/releases/download/m5-data-v1/m5-forecasting-accuracy.zip
-unzip m5.zip
-```
-
-The ZIP (48 MB) holds `calendar.csv`, `sales_train_evaluation.csv` and `sell_prices.csv`. Every script and notebook reads them from the repository root; if they land in a sub-folder, move them up, or pass `--data <folder>` to `xgb_forecast.py`.
-
-**2. Check the XGBoost pipeline in about 3 minutes.**
-
-```bash
-python -m pip install "xgboost==3.4.1" "pandas==3.0.6" "numpy==2.5.3" "scikit-learn==1.9.1"
+python -m pip install -r requirements.txt
 python xgb_forecast.py --state CA --cat FOODS --device cpu --quick
+jupyter notebook notebooks/
 ```
 
-This trains the baselines and XGBoost M1–M3 on the 5,748 California FOODS series with fewer trees, and writes R², MAE, WAPE and WRMSSE to `outputs/xgb_CA_FOODS_quick/metrics_overall.csv`. In a test from a fresh clone it took 3.6 minutes, and M3 reached R² 0.659 and WRMSSE 0.703, ahead of both baselines. On a Mac, XGBoost also needs `brew install libomp`.
+The quick run trains the baselines and XGBoost M1–M3 on the 5,748 California FOODS series with fewer trees and writes the four metrics to `outputs/xgb_CA_FOODS_quick/metrics_overall.csv`. From a fresh clone it took 3.6 minutes, and M3 reached R² 0.659 and WRMSSE 0.703. [`xgboost_full_panel.ipynb`](notebooks/xgboost_full_panel.ipynb) rebuilds the full-panel XGBoost results from the archived outputs in seconds, without the data. The full runs used MIT ORCD: 3 h 15 min on 32 CPU cores for XGBoost and 4 h 15 min on one GPU for TimesFM 3.0 ([cluster runs](docs/reproduce.md)). On a Mac, XGBoost also needs `brew install libomp`.
 
-**3. Open the notebooks.** Install `jupyter`, `matplotlib` and `seaborn`, then run `jupyter notebook notebooks/`.
+## Repository map
 
-| Notebook | On a laptop | Extra packages |
-|---|---|---|
-| [`xgboost_full_panel.ipynb`](notebooks/xgboost_full_panel.ipynb) | Seconds: reads the archived results, needs no data | — |
-| [`exploratory_analysis.ipynb`](notebooks/exploratory_analysis.ipynb) | Yes | — |
-| [`regression_ols_ridge_lasso.ipynb`](notebooks/regression_ols_ridge_lasso.ipynb) | Slow: 35 min on 32 cores | `scikit-learn`, `statsmodels` |
-| [`lstm_d1553.ipynb`](notebooks/lstm_d1553.ipynb) | Slow without a GPU | `torch`, `scipy` |
-| [`timesfm3_v3_v6.ipynb`](notebooks/timesfm3_v3_v6.ipynb) | Needs a GPU, or the cached forecasts | TimesFM 3.0, `torch`; see [Run and reproduce](docs/reproduce.md#reproduce-timesfm-30) |
-
-**4. Full runs.** The headline results come from MIT ORCD jobs on all 30,490 series: 3 h 15 min on 32 CPU cores for XGBoost and 4 h 15 min on one GPU for TimesFM 3.0. [Run and reproduce](docs/reproduce.md) has the batch scripts.
-
-## Go deeper
-
-| Page | What is in it |
+| Path | Contents |
 |---|---|
-| [Full results](docs/results.md) | Every model's four metrics on the full panel, the team's TimesFM 3.0 runs, and next-day forecasts |
-| [XGBoost results notebook](notebooks/xgboost_full_panel.ipynb) | What each feature group adds, the 12 hierarchy levels, accuracy across the test year, daily totals, feature importance, and where forecasting is hard |
-| [Code and notebooks](docs/code.md) | Which file holds each model, its forecast task and its run time |
-| [Run and reproduce](docs/reproduce.md) | The ORCD batch jobs behind every result, and how TimesFM 3.0 is installed |
-| [Archived ORCD outputs](results/README.md) | The metrics and logs each result comes from |
+| `xgb_forecast.py` · `wrmsse.py` · `final_metrics.py` | XGBoost training, M5 WRMSSE scoring, final metric tables |
+| `timesfm_forecast.py` · `timesfm3_improvements.py` | TimesFM 3.0 baseline and adjusted runs |
+| [`notebooks/`](notebooks) | Data exploration, regression, XGBoost results, LSTM, TimesFM 3.0 V3–V6 |
+| [`cluster/`](cluster) | ORCD environment set-up and batch scripts |
+| [`results/`](results/README.md) | Metrics archived from each ORCD job |
+| [`docs/`](docs) | Business overview, full results, code by model, cluster runs |
 
-Data: [download the M5 data ZIP](https://github.com/KimChen001/m5-walmart-sales-forecasting/releases/download/m5-data-v1/m5-forecasting-accuracy.zip) ([Kaggle data page](https://www.kaggle.com/competitions/m5-forecasting-accuracy/data)).
+## Limitations
+
+- Stock-outs look like zero demand. Only TimesFM 3.0 V3 cleans likely stock-outs (0.65% of test item–days fit its rule); without inventory data, none can be confirmed.
+- The dollar figures scale safety stock by each model's RMSE. They ignore lead times and how error varies across items, so they are estimates, not a replenishment simulation.
+- The data cover 10 stores and one test year (2015–16); results may not transfer to other stores or periods.
+- The daily re-forecasting gain applies to decisions made one day ahead.
 
 **Team** · Regression notebook by Kayla. XGBoost by Zhixin. LSTM notebook by Marco. TimesFM 3.0 by Kayla, Zhixin and Marco.
