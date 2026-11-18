@@ -6,9 +6,43 @@
 
 Forecast the next 28 days of unit sales for each item in each store to support replenishment planning. The current benchmark covers **30,490 item–store series**, **10 Walmart stores**, and **388 held-out days**.
 
-[Download the M5 data ZIP](https://github.com/KimChen001/m5-walmart-sales-forecasting/releases/download/m5-data-v1/m5-forecasting-accuracy.zip) · [Run locally](#run-locally) · [Reproduce the full benchmark](#reproduce-the-full-benchmark) · [Results](#results) · [Reproduce TimesFM](#reproduce-timesfm-30)
+[Summary and business impact](#summary) · [Download the M5 data ZIP](https://github.com/KimChen001/m5-walmart-sales-forecasting/releases/download/m5-data-v1/m5-forecasting-accuracy.zip) · [Run locally](#run-locally) · [Reproduce the full benchmark](#reproduce-the-full-benchmark) · [Results](#results) · [Reproduce TimesFM](#reproduce-timesfm-30)
 
 The project evaluates **TimesFM 3.0, XGBoost, OLS, and an LSTM neural network** against simple forecasting baselines. The XGBoost benchmark below uses seasonal naive and a 28-day moving average. Other experiments use their documented forecast horizons and scoring panels.
+
+## Summary
+
+**The problem.** Every day, each store decides how much of each item to stock. Too little loses sales and frustrates customers; too much ties up cash and lets food spoil. A forecast of daily unit sales per item and store is the starting point for that decision.
+
+**The prediction task.** Forecast the units sold of every item in every store (30,490 series) for each of the next 28 days, re-forecasting every 4 weeks to match the re-order cycle. Inputs are past sales, weekly prices, calendar events and SNAP days. Every model trains on the first 80% of days and is scored on the last 20%, about 13 months from the end of April 2015, which no model sees during training.
+
+**Models compared.** Two rules a store can run today without a model (seasonal naive and a 28-day moving average); a regularised regression (OLS, Ridge and LASSO, on next-day forecasts); XGBoost; an LSTM; TimesFM 3.0 used zero-shot; and V6, which averages TimesFM 3.0 with recursive boosted trees.
+
+**Key findings**
+
+1. **Recent sales drive accuracy.** Adding lagged sales to XGBoost cut WRMSSE from 0.994 to 0.681; price, SNAP and events added little on their own.
+2. **Past that, complexity buys little.** XGBoost, the LSTM, TimesFM 3.0 and V6 all reach R² 0.63 to 0.64. TimesFM 3.0 has the highest R² of the single models, while the models that learn across series are better on store and state totals (WRMSSE 0.649 for recursive boosted trees, 0.660 for the LSTM and 0.681 for XGBoost, against 0.744 for TimesFM 3.0).
+3. **How TimesFM's output is read matters more than tuning the model.** Its raw outputs under-report right-skewed sales; reading them as a calibrated mean cut the total-sales bias from −7.0% to −0.8% and WRMSSE from 0.830 to 0.744.
+
+### Business impact
+
+V6 forecasts with 8.0% less error than today's 28-day rule (RMSE 2.171 against 2.36). Safety stock scales with forecast error, so for the 10 stores and roughly $45M of annual sales in the data:
+
+| Model | Forecast error vs today's rule | Inventory freed at the same 95% in-stock target |
+|---|---:|---:|
+| **V6: TimesFM 3.0 + boosted trees** | **−8.0%** | **$148k** |
+| TimesFM 3.0 alone | −7.9% | $146k |
+| LSTM | −7.1% | $131k |
+| XGBoost M3 | −6.2% | $115k |
+| Boosted trees alone | +0.5% | −$10k |
+
+Holding that $148k of inventory costs about $37k a year. Alternatively, keeping inventory unchanged raises the chance of no stock-out in a 4-week cycle from 95.0% to 96.3%, cutting lost sales by about 35%, or about $143k a year.
+
+Assumptions: safety stock is 1.645 × the standard deviation of each item-store's 28-day forecast error under today's rule ($1.85M at cost), scaled by each model's RMSE relative to that rule on the same rows. RMSE is used here because safety stock depends on the spread of forecast errors. Cost is 75.4% of price (Walmart FY2016 gross margin 24.6%), and holding cost is 25% a year.
+
+### Recommendation
+
+Adopt V6 for replenishment forecasts, starting with a pilot in one store per state against matched stores that stay on the 28-day rule. Judge it on in-stock rate, inventory value and food waste, not on forecast error alone. Every 4 weeks, rerun TimesFM, refit the trees and relearn the ensemble weights, and keep TimesFM alone as the fallback, since it delivers most of the gain by itself. Collect inventory data, so that stock-outs stop looking like zero demand. Re-forecasting more often is a further lever: moving XGBoost from a 28-day to a daily schedule cut its WRMSSE by 23% (see [Next-day forecasts](#next-day-forecasts)).
 
 ## Run locally
 
@@ -41,7 +75,7 @@ The quick run checks the training and scoring pipeline on **5,748 California FOO
 
 Between the two main models, TimesFM leads on R², MAE and WAPE, which score each item–store–day on its own, while XGBoost M3 leads on the 12-level WRMSSE (0.681 against 0.825), which also scores sales summed to stores, departments and states. The sales-only TimesFM run has the lowest MAE and WAPE because it forecasts the median, which minimises absolute error, but it under-forecasts total sales by 26.7%. Fitting the decile weights on training data gives up some MAE to correct that level.
 
-MIT ORCD jobs `29323394` (XGBoost), `27920694` (TimesFM baseline), and `28701113` (TimesFM adjusted). Relative to seasonal naive, M3 reduced MAE by **0.252 units per scored item–store–day** and WRMSSE by **27.4%**. A replenishment simulation with lead times, holding costs and stockout costs is needed to estimate the business impact.
+MIT ORCD jobs `29323394` (XGBoost), `27920694` (TimesFM baseline), and `28701113` (TimesFM adjusted). Relative to seasonal naive, M3 reduced MAE by **0.252 units per scored item–store–day** and WRMSSE by **27.4%**. [Business impact](#business-impact) translates these errors into inventory dollars.
 
 ### TimesFM in the presentation
 
