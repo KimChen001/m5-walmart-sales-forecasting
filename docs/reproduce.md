@@ -4,18 +4,7 @@
 
 ## Run locally
 
-Clone the repository and download [`m5-forecasting-accuracy.zip`](https://github.com/KimChen001/m5-walmart-sales-forecasting/releases/download/m5-data-v1/m5-forecasting-accuracy.zip). In PowerShell, replace the ZIP path if your browser saved it elsewhere.
-
-```powershell
-git clone https://github.com/KimChen001/m5-walmart-sales-forecasting.git
-cd m5-walmart-sales-forecasting
-Expand-Archive -LiteralPath "$env:USERPROFILE\Downloads\m5-forecasting-accuracy.zip" -DestinationPath .
-python -m pip install "xgboost==3.4.1" "pandas==3.0.6" "numpy==2.5.3" "scikit-learn==1.9.1"
-python xgb_forecast.py --state CA --cat FOODS --device cpu --quick
-Import-Csv outputs/xgb_CA_FOODS_quick/metrics_overall.csv | Format-Table R2,MAE,WAPE,WRMSSE
-```
-
-The quick run checks the training and scoring pipeline on **5,748 California FOODS series** with a reduced tree budget. It completed in approximately **3 minutes** on the development machine. The scripts read `calendar.csv`, `sales_train_evaluation.csv`, and `sell_prices.csv` from the repository root. The [official Kaggle data page](https://www.kaggle.com/competitions/m5-forecasting-accuracy/data) documents the files.
+Getting the data, the 3-minute XGBoost check and the notebooks are covered on the overview page under [Run the code](../README.md#run-the-code). The [official Kaggle data page](https://www.kaggle.com/competitions/m5-forecasting-accuracy/data) documents the three CSV files.
 
 ## Reproduce the full XGBoost benchmark
 
