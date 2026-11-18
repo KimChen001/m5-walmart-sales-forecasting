@@ -6,6 +6,8 @@
 
 We forecast daily unit sales for every item in every store, 30,490 series across 10 Walmart stores, and translate forecast accuracy into inventory dollars. The best model frees about $148k of safety stock, and re-forecasting daily instead of every 4 weeks improves accuracy more than any choice between models.
 
+**Run the code:** [get the data and run a 3-minute check](#run-the-code).
+
 ## Contents
 
 1. [The business problem](#the-business-problem): the decision the forecast supports
@@ -14,7 +16,8 @@ We forecast daily unit sales for every item in every store, 30,490 series across
 4. [The improvement: re-forecast daily](#the-improvement-re-forecast-daily): same model, fresher data
 5. [Business impact](#business-impact): what the accuracy is worth
 6. [Recommendation](#recommendation): what to do next
-7. [Go deeper](#go-deeper): full results, code and how to reproduce
+7. [Run the code](#run-the-code): data, a 3-minute check, and the notebooks
+8. [Go deeper](#go-deeper): full results, code by model, and the cluster runs
 
 ## The business problem
 
@@ -86,6 +89,51 @@ Safety stock is 1.645 × the standard deviation of each item-store's 28-day fore
 
 ![Recommendation slide: why the V6 ensemble, inventory freed against today's 28-day rule, and the roll-out plan](docs/recommendation.png)
 
+## Run the code
+
+Everything in this section runs on a laptop CPU. It was tested with Python 3.13.
+
+**1. Get the code and the data.** In Windows PowerShell:
+
+```powershell
+git clone https://github.com/KimChen001/m5-walmart-sales-forecasting.git
+cd m5-walmart-sales-forecasting
+Invoke-WebRequest https://github.com/KimChen001/m5-walmart-sales-forecasting/releases/download/m5-data-v1/m5-forecasting-accuracy.zip -OutFile m5.zip
+Expand-Archive m5.zip -DestinationPath .
+```
+
+On macOS or Linux:
+
+```bash
+git clone https://github.com/KimChen001/m5-walmart-sales-forecasting.git
+cd m5-walmart-sales-forecasting
+curl -L -o m5.zip https://github.com/KimChen001/m5-walmart-sales-forecasting/releases/download/m5-data-v1/m5-forecasting-accuracy.zip
+unzip m5.zip
+```
+
+The ZIP (48 MB) holds `calendar.csv`, `sales_train_evaluation.csv` and `sell_prices.csv`. Every script and notebook reads them from the repository root; if they land in a sub-folder, move them up, or pass `--data <folder>` to `xgb_forecast.py`.
+
+**2. Check the XGBoost pipeline in about 3 minutes.**
+
+```bash
+python -m pip install "xgboost==3.4.1" "pandas==3.0.6" "numpy==2.5.3" "scikit-learn==1.9.1"
+python xgb_forecast.py --state CA --cat FOODS --device cpu --quick
+```
+
+This trains the baselines and XGBoost M1–M3 on the 5,748 California FOODS series with fewer trees, and writes R², MAE, WAPE and WRMSSE to `outputs/xgb_CA_FOODS_quick/metrics_overall.csv`. In a test from a fresh clone it took 3.6 minutes, and M3 reached R² 0.659 and WRMSSE 0.703, ahead of both baselines. On a Mac, XGBoost also needs `brew install libomp`.
+
+**3. Open the notebooks.** Install `jupyter`, `matplotlib` and `seaborn`, then run `jupyter notebook notebooks/`.
+
+| Notebook | On a laptop | Extra packages |
+|---|---|---|
+| [`xgboost_full_panel.ipynb`](notebooks/xgboost_full_panel.ipynb) | Seconds: reads the archived results, needs no data | — |
+| [`exploratory_analysis.ipynb`](notebooks/exploratory_analysis.ipynb) | Yes | — |
+| [`regression_ols_ridge_lasso.ipynb`](notebooks/regression_ols_ridge_lasso.ipynb) | Slow: 35 min on 32 cores | `scikit-learn`, `statsmodels` |
+| [`lstm_d1553.ipynb`](notebooks/lstm_d1553.ipynb) | Slow without a GPU | `torch`, `scipy` |
+| [`timesfm3_v3_v6.ipynb`](notebooks/timesfm3_v3_v6.ipynb) | Needs a GPU, or the cached forecasts | TimesFM 3.0, `torch`; see [Run and reproduce](docs/reproduce.md#reproduce-timesfm-30) |
+
+**4. Full runs.** The headline results come from MIT ORCD jobs on all 30,490 series: 3 h 15 min on 32 CPU cores for XGBoost and 4 h 15 min on one GPU for TimesFM 3.0. [Run and reproduce](docs/reproduce.md) has the batch scripts.
+
 ## Go deeper
 
 | Page | What is in it |
@@ -93,7 +141,7 @@ Safety stock is 1.645 × the standard deviation of each item-store's 28-day fore
 | [Full results](docs/results.md) | Every model's four metrics on the full panel, the team's TimesFM 3.0 runs, and next-day forecasts |
 | [XGBoost results notebook](notebooks/xgboost_full_panel.ipynb) | What each feature group adds, the 12 hierarchy levels, accuracy across the test year, daily totals, feature importance, and where forecasting is hard |
 | [Code and notebooks](docs/code.md) | Which file holds each model, its forecast task and its run time |
-| [Run and reproduce](docs/reproduce.md) | A 3-minute local check, and the ORCD jobs behind every result |
+| [Run and reproduce](docs/reproduce.md) | The ORCD batch jobs behind every result, and how TimesFM 3.0 is installed |
 | [Archived ORCD outputs](results/README.md) | The metrics and logs each result comes from |
 
 Data: [download the M5 data ZIP](https://github.com/KimChen001/m5-walmart-sales-forecasting/releases/download/m5-data-v1/m5-forecasting-accuracy.zip) ([Kaggle data page](https://www.kaggle.com/competitions/m5-forecasting-accuracy/data)).
