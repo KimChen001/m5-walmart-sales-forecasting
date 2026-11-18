@@ -43,6 +43,17 @@ Between the two main models, TimesFM leads on R², MAE and WAPE, which score eac
 
 MIT ORCD jobs `29323394` (XGBoost), `27920694` (TimesFM baseline), and `28701113` (TimesFM adjusted). Relative to seasonal naive, M3 reduced MAE by **0.252 units per scored item–store–day** and WRMSSE by **27.4%**. A replenishment simulation with lead times, holding costs and stockout costs is needed to estimate the business impact.
 
+### TimesFM in the presentation
+
+The slide deck reports the team's TimesFM 3.0 notebook run (V3: stock-out cleaning, discount and major-event covariates, and a mean calibrated on earlier test windows) and the recommended V6 ensemble of V3 with recursive boosted trees. Both cover the same 30,490 series, with a test period that starts one day earlier (2015-04-30).
+
+| Team notebook, 28-day forecasts | OSR² ↑ | MAE (units) ↓ | WAPE ↓ | M5 WRMSSE (12 levels) ↓ |
+|---|---:|---:|---:|---:|
+| TimesFM 3.0 · V3 | 0.6415 | 0.988 | 75.5% | 0.744 |
+| **V6 · V3 plus recursive boosted trees** | **0.6425** | **0.984** | **75.2%** | **0.716** |
+
+OSR² measures error against the training-period mean rather than the test-period mean. The notebook's code is not yet in this repository.
+
 ### Next-day forecasts
 
 The same job reran each model with sales history updated every day, which matches the setting of the regression experiment. Seasonal naive, M1 and M2 do not use recent sales, so their scores are unchanged and are omitted.
