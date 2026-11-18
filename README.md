@@ -25,7 +25,7 @@ The project evaluates **TimesFM 3.0, XGBoost, OLS, and an LSTM neural network** 
 3. **How TimesFM's output is read matters more than tuning the model.** Its raw outputs under-report right-skewed sales; reading them as a calibrated mean cut the total-sales bias from −7.0% to −0.8% and WRMSSE from 0.830 to 0.744.
 4. **Re-forecasting daily is worth more than the choice of model.** On a next-day schedule XGBoost M3 reaches R² 0.706 and WRMSSE 0.525, against 0.629 and 0.681 when it re-forecasts every 4 weeks. That gain is larger than the gap between any two of the models above, and these are the highest R² and lowest WRMSSE of any run on the full panel. Next-day scores answer a shorter-horizon question, so they are not ranked against the 28-day models.
 
-![Scatter of item-level R² against 12-level WRMSSE: the models that learn across series score best on totals, while TimesFM 3.0 and V6 have the highest R²](docs/accuracy-map.png)
+![Bar charts of item-level R² and 12-level WRMSSE for each model on the full panel, with XGBoost M3 re-forecast daily shown separately](docs/accuracy-by-model.png)
 
 ### Business impact
 
@@ -160,12 +160,11 @@ Both models report rolling WRMSSE across 12 M5 hierarchy levels. XGBoost zero-fi
 
 ## Code by model
 
-Every model in the presentation has its code here. The XGBoost script is at the repository root, the TimesFM 3.0 scripts are covered in [Reproduce TimesFM 3.0](#reproduce-timesfm-30), and the notebooks are in [`notebooks/`](notebooks). Open each notebook from that folder: it reads the three CSVs from the repository root.
+Every model in the presentation has its code here. The XGBoost script is at the repository root, the TimesFM 3.0 scripts are covered in [Reproduce TimesFM 3.0](#reproduce-timesfm-30), and the team's notebooks are in [`notebooks/`](notebooks). Open each notebook from that folder: it reads the three CSVs from the repository root.
 
 | File | Model | Forecast task | Run notes |
 |---|---|---|---|
-| [`xgb_forecast.py`](xgb_forecast.py) | XGBoost M1–M3 and baselines on all 30,490 series; the source of the XGBoost results above | 28 days from each of 14 origins, and next day, training to `d_1553` | 3 h 15 min for both schedules on 32 ORCD cores (job `29323394`) |
-| [`xgboost_ca_foods.ipynb`](notebooks/xgboost_ca_foods.ipynb) | XGBoost M1–M3 with feature importance, error by store, department, sales volume and month, and residual checks | 28 days ahead for California foods (5,748 series), training to `d_1553` | About 12 min on a CPU; also runs in Colab. It predates origin-anchored sales features (it lags them 28 days or more), so its scores differ from the full-panel results |
+| [`xgb_forecast.py`](xgb_forecast.py) | XGBoost M1–M3 and baselines on all 30,490 series; the source of the XGBoost results above, archived in [`results/xgb-29323394/`](results/xgb-29323394) | 28 days from each of 14 origins, and next day, training to `d_1553` | 3 h 15 min for both schedules on 32 ORCD cores (job `29323394`); run with [`cluster/run_xgb_both.sbatch`](cluster/run_xgb_both.sbatch) |
 | [`exploratory_analysis.ipynb`](notebooks/exploratory_analysis.ipynb) | Data exploration behind the data slide | — | No model training |
 | [`regression_ols_ridge_lasso.ipynb`](notebooks/regression_ols_ridge_lasso.ipynb) | OLS, Ridge and LASSO, λ by 10-fold cross-validation | Next day, on 80,000 training and 20,000 test item-store-days sampled at random | 35 min on 32 ORCD cores |
 | [`lstm_d1553.ipynb`](notebooks/lstm_d1553.ipynb) | LSTM encoder–decoder, one network for all 30,490 series | 28 days from each of 14 origins, training to `d_1553` | About 5 min of training on one GPU; writes its test forecasts to `outputs/` |
