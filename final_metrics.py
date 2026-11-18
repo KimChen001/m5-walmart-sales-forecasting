@@ -1,19 +1,19 @@
 """
-一次算完两套面板的全部指标, 打印成一张表。
+Compute all metrics for both panels in one go and print them as one table.
 
-两套面板:
-    FULL      全部 30,490 条 item-store 序列
-    REGULAR   只保留"有销量的天数 > 50%"的常销品 (6,638 条) —— 对齐 Kayla 的口径
+Two panels:
+    FULL      all 30,490 item-store series
+    REGULAR   only regular sellers with "sales on more than 50% of days" (6,638 series) —— aligned with Kayla's setup
 
-指标:
-    R2 / RMSE / MAE / WAPE / Bias        item-store-day 层面, 只算已上架的行
-    Daily_R2 / Daily_MAPE                每日总量, 排除圣诞 (闭店)
-    WRMSSE / WRMSSE_L12                  从 wrmsse.py 已经写好的结果里读进来
+Metrics:
+    R2 / RMSE / MAE / WAPE / Bias        item-store-day level, rows on the shelf only
+    Daily_R2 / Daily_MAPE                daily totals, excluding Christmas (stores closed)
+    WRMSSE / WRMSSE_L12                  read from the results wrmsse.py has already written
 
-用法 (在 ~/m5-project 下):
+Usage (from ~/m5-project):
     python final_metrics.py outputs/xgb_ALL_ALL
 
-前提: 这两条已经跑过, 它们的输出会被直接读取, 不重算
+Prerequisite: these two have already run; their outputs are read directly, not recomputed
     python wrmsse.py outputs/xgb_ALL_ALL
     python wrmsse.py outputs/xgb_ALL_ALL --min-selling-share 0.5
 """
@@ -35,10 +35,10 @@ def r2(y, p):
 
 
 def point_metrics(te, models, cal):
-    """item-store-day 指标 + 每日总量指标"""
+    """item-store-day metrics + daily-total metrics"""
     daily = te.groupby("d_num")[["y"] + models].sum()
     d = pd.to_datetime(cal.date.to_numpy()[daily.index - 1])
-    open_ = ~((d.month == 12) & (d.day == 25))          # 圣诞闭店, 总量 ~0, 会让 MAPE 爆掉
+    open_ = ~((d.month == 12) & (d.day == 25))          # stores close on Christmas; totals ~0 would blow up MAPE
     rows = {}
     for m in models:
         e = te[m] - te.y
@@ -55,21 +55,21 @@ def point_metrics(te, models, cal):
 
 
 def add_wrmsse(df, path):
-    """把 wrmsse.py 写好的结果并进来; 没有就留空, 不重算"""
+    """merge in the results wrmsse.py has written; if missing, leave blank and do not recompute"""
     if path.exists():
         w = pd.read_csv(path, index_col=0)
         for c in ("WRMSSE", "WRMSSE_L12"):
             if c in w.columns:
                 df[c] = w[c]
     else:
-        print(f"  (没找到 {path.name}, WRMSSE 这两列留空)")
+        print(f"  ({path.name} not found; the two WRMSSE columns are left blank)")
     return df
 
 
 def show(title, df, n_series, n_rows):
     print()
     print("=" * 104)
-    print(f"{title}   |   {n_series:,} 条序列   |   {n_rows:,} 个计分的 item-day")
+    print(f"{title}   |   {n_series:,} series   |   {n_rows:,} scored item-days")
     print("=" * 104)
     cols = [c for c in ["R2", "Daily_R2", "RMSE", "MAE", "WAPE", "Bias",
                         "Daily_MAPE", "WRMSSE", "WRMSSE_L12"] if c in df.columns]
@@ -82,24 +82,24 @@ def main():
     data_dir = Path(sys.argv[2]) if len(sys.argv) > 2 else Path(".")
 
     day_cols = [f"d_{i}" for i in range(1, LAST_DAY + 1)]
-    print("读 sales_train_evaluation.csv ...")
+    print("reading sales_train_evaluation.csv ...")
     sales = pd.read_csv(data_dir / "sales_train_evaluation.csv",
                         usecols=["id"] + day_cols, dtype={c: np.int16 for c in day_cols})
     share = (sales[day_cols].to_numpy() > 0).mean(axis=1)
     regular = set(sales.id[share > 0.5])
-    print(f"  常销品 (>50% 的天数有销量): {len(regular):,} / {len(sales):,}")
+    print(f"  regular sellers (sales on >50% of days): {len(regular):,} / {len(sales):,}")
     del sales
 
     cal = pd.read_csv(data_dir / "calendar.csv", parse_dates=["date"]).iloc[:LAST_DAY]
 
-    print("读 test_predictions.csv.gz ...")
+    print("reading test_predictions.csv.gz ...")
     head = pd.read_csv(out_dir / "test_predictions.csv.gz", nrows=0)
     models = [c for c in head.columns if c not in SKIP]
     te = pd.read_csv(out_dir / "test_predictions.csv.gz",
                      usecols=["id", "d_num", "y"] + models,
                      dtype={"d_num": np.int32, "y": np.float32,
                             **{m: np.float32 for m in models}})
-    print(f"  {len(te):,} 行, 模型列: {', '.join(models)}")
+    print(f"  {len(te):,} rows, model columns: {', '.join(models)}")
 
     full = add_wrmsse(point_metrics(te, models, cal), out_dir / "metrics_wrmsse.csv")
     full.to_csv(out_dir / "metrics_final_full.csv")
@@ -110,18 +110,18 @@ def main():
     reg.to_csv(out_dir / "metrics_final_regular50.csv")
 
     pd.set_option("display.width", 250, "display.max_columns", 30)
-    show("PANEL A — FULL: 全部序列", full, te.id.nunique(), len(te))
-    show("PANEL B — REGULAR SELLERS: 对齐 Kayla 的 6,638 子集", reg, sub.id.nunique(), len(sub))
+    show("PANEL A — FULL: all series", full, te.id.nunique(), len(te))
+    show("PANEL B — REGULAR SELLERS: the 6,638 subset aligned with Kayla", reg, sub.id.nunique(), len(sub))
 
     print()
     print("=" * 104)
-    print("两套面板的差距 (REGULAR - FULL), 负数 = 筛掉慢销品之后变好")
+    print("Difference between the panels (REGULAR - FULL); negative = better after dropping slow sellers")
     print("=" * 104)
     common = [c for c in full.columns if c in reg.columns]
     print((reg[common] - full[common]).round(4).to_string())
     print()
-    print("注: 同一个模型、同一份预测, 只是计分的序列不同。差距全部来自面板, 不是模型。")
-    print(f"已写入 {out_dir}/metrics_final_full.csv 和 metrics_final_regular50.csv")
+    print("Note: same models, same predictions, only the scored series differ. The whole gap comes from the panel, not the model.")
+    print(f"written to {out_dir}/metrics_final_full.csv and metrics_final_regular50.csv")
 
 
 if __name__ == "__main__":

@@ -1,29 +1,32 @@
 """
-XGBoost 销量预测 —— M5 (Walmart) 数据, 默认 CA 州 FOODS 子集
+XGBoost sales forecasting on M5 (Walmart) data; by default the CA state, FOODS category subset.
 
-时间切分 (按时间, 不打乱):
-    训练  d_1    – d_1553  (80%, 2011-01-29 ~ 2015-04-30)
-    测试  d_1554 – d_1941  (20%, 2015-05-01 ~ 2016-05-22)
-    训练集最后 90 天 (d_1464–d_1553) 用来 early stopping 选树的数量, 选好后用全部训练集重训
+Time split (by time, no shuffling):
+    train  d_1    – d_1553  (80%, 2011-01-29 ~ 2015-04-30)
+    test   d_1554 – d_1941  (20%, 2015-05-01 ~ 2016-05-22)
+    The last 90 days of the training set (d_1464–d_1553) are used for early stopping to choose the number
+    of trees; the model is then refit on the whole training set.
 
-预测设定: 滚动 28 天预测。所有历史销量特征都滞后 >= 28 天,
-    所以测试期任意一天用到的信息在它所在的 28 天窗口开始前都已知, 整个测试期可以一次性预测。
+Forecast setting: rolling 28-day forecasts. Every historical sales feature is lagged by >= 28 days,
+    so everything used for any test day is known before its 28-day window starts, and the whole test
+    period can be predicted in one pass.
 
-消融实验 (特征一层层加):
-    M1 = 日历 + ID
-    M2 = M1 + 价格 / SNAP / 事件
-    M3 = M2 + 滞后销量 / 滚动统计
+Ablation (features added layer by layer):
+    M1 = calendar + IDs
+    M2 = M1 + price / SNAP / events
+    M3 = M2 + lagged sales / rolling statistics
 
-评估指标:
-    RMSE / MAE / WAPE / R2  —— 每条 item-store 序列一视同仁
-    WRMSSE (M5 官方指标)    —— 按"起点前 28 天销售额"加权 + 按序列自身波动缩放,
-                               在 12 个聚合层级上取平均; 实现在 wrmsse.py
+Metrics:
+    RMSE / MAE / WAPE / R2  —— every item-store series weighted equally
+    WRMSSE (official M5 metric) —— weighted by "dollar sales in the 28 days before the origin", scaled by
+                               each series' own volatility, averaged over 12 aggregation levels;
+                               implemented in wrmsse.py
 
-用法:
-    python xgb_forecast.py                 # 默认 CA FOODS
-    python xgb_forecast.py --quick         # 少量树, 只检查流程
+Usage:
+    python xgb_forecast.py                 # default: CA FOODS
+    python xgb_forecast.py --quick         # few trees, only checks the pipeline
     python xgb_forecast.py --state TX --cat HOBBIES
-    python xgb_forecast.py --state ALL --cat ALL --device cuda   # 全量, 集群 GPU 上跑
+    python xgb_forecast.py --state ALL --cat ALL --device cuda   # full panel, on a cluster GPU
 """
 import argparse
 import json
@@ -39,18 +42,18 @@ import xgboost as xgb
 from wrmsse import WRMSSE, build_dollars
 
 try:
-    import psutil                     # 只用来做内存护栏, 集群上没装就跳过
+    import psutil                     # only used for the memory guard; skipped if not installed on the cluster
 except ImportError:
     psutil = None
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--state", default="CA", help="CA / TX / WI / ALL")
 ap.add_argument("--cat", default="FOODS", help="FOODS / HOBBIES / HOUSEHOLD / ALL")
-ap.add_argument("--device", default="cpu", help="cpu 或 cuda")
-ap.add_argument("--data", default=str(Path(__file__).resolve().parent), help="三个 csv 所在的目录")
-ap.add_argument("--quick", action="store_true", help="少量树, 只用来检查流程")
+ap.add_argument("--device", default="cpu", help="cpu or cuda")
+ap.add_argument("--data", default=str(Path(__file__).resolve().parent), help="folder holding the three csv files")
+ap.add_argument("--quick", action="store_true", help="few trees, only to check the pipeline")
 ap.add_argument("--horizon", type=int, default=28, choices=[1, 28],
-                help="28 = 每 28 天一个预测起点 (M5 口径); 1 = 每天重新预测 (对齐 OLS)")
+                help="28 = one forecast origin every 28 days (M5 convention); 1 = re-forecast every day (matches OLS)")
 args = ap.parse_args()
 
 DATA = Path(args.data)
@@ -58,15 +61,15 @@ _hz = "" if args.horizon == 28 else f"_h{args.horizon}"
 OUT = Path(__file__).resolve().parent / "outputs" / f"xgb_{args.state}_{args.cat}{_hz}{'_quick' if args.quick else ''}"
 OUT.mkdir(parents=True, exist_ok=True)
 
-D = 1941            # 有销量的最后一天 (d_1942–d_1969 只有日历, 没有销量)
-TRAIN_END = 1553    # 80% / 20%; 必须和我们自己的 TimesFM 跑法 (split=1553) 一致
-VALID_START = 1464  # 训练集最后 90 天做 early stopping
-H = 28              # WRMSSE 的评分窗口长度, 固定 28 天 (M5 定义)
-HZ = args.horizon   # 预测步长: 每隔 HZ 天重新预测一次
+D = 1941            # last day with sales (d_1942–d_1969 have calendar data only, no sales)
+TRAIN_END = 1553    # 80% / 20%; must match our own TimesFM runs (split=1553)
+VALID_START = 1464  # last 90 days of the training set, for early stopping
+H = 28              # WRMSSE scoring window, fixed at 28 days (M5 definition)
+HZ = args.horizon   # forecast step: re-forecast every HZ days
 
 ROUNDS, ES = (40, 10) if args.quick else (3000, 100)
 PARAMS = dict(
-    objective="reg:tweedie", tweedie_variance_power=1.2,  # 大量 0 的计数数据
+    objective="reg:tweedie", tweedie_variance_power=1.2,  # count data with many zeros
     eta=0.08, max_depth=8, subsample=0.8, colsample_bytree=0.8,
     tree_method="hist", eval_metric="rmse", seed=42, device=args.device,
     nthread=int(os.environ.get("SLURM_CPUS_PER_TASK", os.cpu_count())),
@@ -76,7 +79,7 @@ t0 = time.time()
 def log(msg):
     print(f"[{time.time() - t0:6.0f}s] {msg}", flush=True)
 
-# ---------------------------------------------------------------- 1. 读数据
+# ---------------------------------------------------------------- 1. Load data
 day_cols = [f"d_{i}" for i in range(1, D + 1)]
 sales = pd.read_csv(DATA / "sales_train_evaluation.csv", dtype={c: np.int16 for c in day_cols})
 if args.state != "ALL":
@@ -85,7 +88,7 @@ if args.cat != "ALL":
     sales = sales[sales.cat_id == args.cat]
 sales = sales.reset_index(drop=True)
 n = len(sales)
-S = sales[day_cols].to_numpy(np.float32)                    # (序列, 天)
+S = sales[day_cols].to_numpy(np.float32)                    # (series, day)
 sales = sales[["id", "item_id", "dept_id", "cat_id", "store_id", "state_id"]]
 
 cal = pd.read_csv(DATA / "calendar.csv").iloc[:D]
@@ -94,9 +97,9 @@ date = pd.to_datetime(cal.date)
 
 prices = pd.read_csv(DATA / "sell_prices.csv")
 prices = prices[prices.store_id.isin(sales.store_id.unique()) & prices.item_id.isin(sales.item_id.unique())]
-log(f"{n} 条序列 x {D} 天, 价格记录 {len(prices)} 行")
+log(f"{n} series x {D} days, {len(prices)} price rows")
 
-# 每周价格 -> 每日价格矩阵 (序列, 天)
+# weekly prices -> daily price matrix (series, day)
 weeks = np.sort(cal.wm_yr_wk.unique())
 prices = prices[prices.wm_yr_wk <= weeks[-1]]
 row_of = pd.Series(np.arange(n), index=sales.store_id + "|" + sales.item_id)
@@ -106,17 +109,17 @@ Pw[pr_row, np.searchsorted(weeks, prices.wm_yr_wk.to_numpy())] = prices.sell_pri
 P = Pw[:, np.searchsorted(weeks, cal.wm_yr_wk.to_numpy())]
 del prices, Pw
 
-valid = ~np.isnan(P)                      # 有价格 = 已上架; 上架前的 0 不是真实销量
+valid = ~np.isnan(P)                      # has a price = on the shelf; zeros before launch are not real sales
 Sn = np.where(valid, S, np.nan).astype(np.float32)
 
-# ---------------------------------------------------------------- 2. 转成长表
-# 行按 (天, 序列) 排列, 这样训练 / 验证 / 测试都是连续切片, 不用复制数据
+# ---------------------------------------------------------------- 2. Long table
+# rows ordered by (day, series), so train / validation / test are contiguous slices and no data is copied
 mask = valid.T.ravel()
 N = int(mask.sum())
 d_num = np.repeat(np.arange(1, D + 1), n)[mask]
 sid = np.tile(np.arange(n), D)[mask]
 y = S.T.ravel()[mask]
-log(f"长表 {N:,} 行 (已删除上架前的行)")
+log(f"long table: {N:,} rows (rows before launch removed)")
 
 M1 = ["item_id", "dept_id", "store_id", "wday", "month", "year", "dom", "week"]
 M2 = M1 + ["sell_price", "price_rel_max", "price_rel_mean", "price_chg_wk",
@@ -127,25 +130,26 @@ M3 = M2 + ["days_ahead", "lag_28",
 CATS = {"item_id", "dept_id", "store_id", "event_name", "event_type"}
 col = {f: j for j, f in enumerate(M3)}
 
-# 内存护栏: X 是整个流程最大的一块。本机内存不够时 Windows 不会报错, 而是改用页面文件,
-# 结果是整机卡住几小时而不是干脆失败 —— 所以在分配之前先拦一道。
-# 集群上 (SLURM) 跳过: psutil 看到的是整个节点的内存, 不是这个 job 的配额。
+# Memory guard: X is the largest object in the pipeline. When a laptop runs out of memory, Windows does not
+# raise an error; it falls back to the page file and the machine freezes for hours instead of failing,
+# so we stop here before allocating.
+# Skipped on the cluster (SLURM): psutil sees the whole node's memory, not this job's allocation.
 x_gb = N * len(M3) * 4 / 2 ** 30
-peak_gb = x_gb * 2.4                      # X + 滚动统计的 float64 临时量 + DMatrix + 评估表
+peak_gb = x_gb * 2.4                      # X + float64 temporaries for rolling statistics + DMatrix + evaluation table
 if psutil is not None:
     free_gb = psutil.virtual_memory().available / 2 ** 30
-    log(f"X 需要 {x_gb:.1f} GB, 整个流程峰值约 {peak_gb:.0f} GB, 当前可用 {free_gb:.0f} GB")
+    log(f"X needs {x_gb:.1f} GB, pipeline peak about {peak_gb:.0f} GB, {free_gb:.0f} GB available now")
     if free_gb < peak_gb and not os.environ.get("SLURM_JOB_ID"):
         raise SystemExit(
-            f"\n内存不够: 峰值约需 {peak_gb:.0f} GB, 现在只有 {free_gb:.0f} GB 可用。\n"
-            f"硬跑下去 Windows 会改用页面文件, 整机卡住几小时而不是报错。\n"
-            f"先关掉浏览器等大进程, 或者跑子集 (--state CA --cat FOODS), "
-            f"或者提交到集群 (sbatch cluster/run_xgb_cpu.sbatch)。")
+            f"\nNot enough memory: the peak needs about {peak_gb:.0f} GB, only {free_gb:.0f} GB is available.\n"
+            f"Running anyway would make Windows fall back to the page file and freeze the machine for hours.\n"
+            f"Close large programs such as the browser, run a subset (--state CA --cat FOODS), "
+            f"or submit to the cluster (sbatch cluster/run_xgb_cpu.sbatch).")
 
-X = np.empty((N, len(M3)), np.float32)    # M1/M2 是 M3 的前缀, 切列不用复制
+X = np.empty((N, len(M3)), np.float32)    # M1/M2 are prefixes of M3, so slicing columns copies nothing
 
 def put(name, a, kind):
-    """kind: 'sd' = (序列, 天) 矩阵, 's' = 每条序列一个值, 'd' = 每天一个值"""
+    """kind: 'sd' = (series, day) matrix, 's' = one value per series, 'd' = one value per day"""
     a = np.asarray(a, np.float32)
     if kind == "sd":
         X[:, col[name]] = a.T.ravel()[mask]
@@ -161,20 +165,20 @@ def shift(A, L):
 
 def codes(s):
     c = pd.Categorical(s).codes.astype(np.float32)
-    c[c < 0] = np.nan                     # 缺失 -> NaN, XGBoost 自己处理
+    c[c < 0] = np.nan                     # missing -> NaN, XGBoost handles it
     return c
 
-# ---------------------------------------------------------------- 3. 特征
-# ID 和日历
+# ---------------------------------------------------------------- 3. Features
+# IDs and calendar
 for c in ["item_id", "dept_id", "store_id"]:
     put(c, codes(sales[c]), "s")
-put("wday", cal.wday, "d")                # 注意: 1 = 周六
+put("wday", cal.wday, "d")                # note: 1 = Saturday
 put("month", cal.month, "d")
 put("year", cal.year, "d")
 put("dom", date.dt.day, "d")
 put("week", date.dt.isocalendar().week.astype(int), "d")
 
-# 价格 (只用当天及之前的价格, 没有未来信息)
+# prices (only the current and earlier prices, no future information)
 with np.errstate(invalid="ignore", divide="ignore"):
     put("sell_price", P, "sd")
     put("price_rel_max", P / np.fmax.accumulate(P, axis=1), "sd")
@@ -183,39 +187,39 @@ with np.errstate(invalid="ignore", divide="ignore"):
     put("price_chg_wk", P / shift(P, 7) - 1, "sd")
 del pmean
 
-# SNAP: 每条序列只取它所在州的 SNAP
-snap_cols = cal[["snap_CA", "snap_TX", "snap_WI"]].to_numpy(np.float32)       # (天, 3)
+# SNAP: each series takes only the SNAP flag of its own state
+snap_cols = cal[["snap_CA", "snap_TX", "snap_WI"]].to_numpy(np.float32)       # (day, 3)
 put("snap", snap_cols[:, sales.state_id.map({"CA": 0, "TX": 1, "WI": 2}).to_numpy()].T, "sd")
 put("is_event", cal.event_name_1.notna(), "d")
 put("event_name", codes(cal.event_name_1), "d")
 put("event_type", codes(cal.event_type_1), "d")
 
-# ---- 预测起点
-# 窗口 [o+1, o+HZ] 里的每一天都只能用第 o 天及之前的销量。
-#   HZ = 28: 每 28 天一个起点 —— M5 官方口径, 和 TimesFM / Kayla 笔记本一致
-#   HZ = 1 : 每天重新预测 —— 和 Kayla 的 OLS/LASSO 一致 (滚动均值截止昨天)
-# orig_of_day[c] = 第 c 列(0 基)那天所属窗口的起点, 数值 = 可用历史的天数。
+# ---- forecast origins
+# Every day in the window [o+1, o+HZ] may only use sales up to and including day o.
+#   HZ = 28: one origin every 28 days —— the official M5 convention, consistent with TimesFM and Kayla's notebook
+#   HZ = 1 : re-forecast every day —— consistent with Kayla's OLS/LASSO (rolling means end yesterday)
+# orig_of_day[c] = origin of the window that column c (0-based) belongs to; its value = number of days of history.
 cols = np.arange(D)
 if HZ == 1:
-    orig_of_day = cols.copy()                    # 历史截止昨天
+    orig_of_day = cols.copy()                    # history ends yesterday
 else:
     orig_of_day = TRAIN_END + HZ * np.floor_divide(cols - TRAIN_END, HZ)
-put("days_ahead", cols - orig_of_day + 1, "d")   # 1..HZ: 距起点多少天
+put("days_ahead", cols - orig_of_day + 1, "d")   # 1..HZ: days since the origin
 
 def pick(A, back):
-    """A[:, 起点 - back]。back=1 即起点当天; 起点前没有那一天就记 NaN"""
+    """A[:, origin - back]. back=1 is the origin day itself; NaN if that day is before the data start"""
     j = orig_of_day - back
     out = A[:, np.clip(j, 0, D - 1)].copy()
     out[:, j < 0] = np.nan
     return out
 
-# 滞后销量。lag_28 原样保留: 它是 M5 的朴素基线 (t-28 <= 起点, 任何 horizon 都合法)。
-# olag_j = 起点往前第 j 天的销量, 窗口内所有天共用同一个值。
+# Lagged sales. lag_28 is kept as is: it is the M5 naive baseline (t-28 <= origin, valid for any horizon).
+# olag_j = sales j days before the origin; all days in the window share the same value.
 for j in [1, 2, 7, 14, 28, 364]:
     put(f"olag_{j}", pick(Sn, j), "sd")
 put("lag_28", shift(Sn, 28), "sd")
 
-# 滚动统计: 窗口止于起点; 用累加和计算, 上架前的 NaN 不算进去
+# Rolling statistics: windows end at the origin; computed from cumulative sums, NaNs before launch excluded
 ok = ~np.isnan(Sn)
 v = np.where(ok, Sn, 0).astype(np.float64)
 z = np.zeros((n, 1))
@@ -229,25 +233,25 @@ def roll(w):
     s[:, w - 1:] = cs[:, w:] - cs[:, :-w]
     s2[:, w - 1:] = cs2[:, w:] - cs2[:, :-w]
     c[:, w - 1:] = cc[:, w:] - cc[:, :-w]
-    c[c < max(1, w // 2)] = np.nan        # 窗口里有效天数太少就不算
+    c[c < max(1, w // 2)] = np.nan        # skip windows with too few valid days
     mean = s / c
     std = np.sqrt(np.clip(s2 / c - mean ** 2, 0, None))
     return mean, std
 
 for w in [7, 28, 56, 180]:
     mean, std = roll(w)
-    put(f"rmean_{w}", pick(mean, 1), "sd")       # 窗口止于起点
+    put(f"rmean_{w}", pick(mean, 1), "sd")       # window ends at the origin
     if w == 28:
         put("rstd_28", pick(std, 1), "sd")
 del cs, cs2, cc, mean, std
-log("特征完成")
+log("features done")
 
-# ---------------------------------------------------------------- 4. 切分
+# ---------------------------------------------------------------- 4. Split
 i_va = int(np.searchsorted(d_num, VALID_START))
 i_te = int(np.searchsorted(d_num, TRAIN_END + 1))
-log(f"训练 {i_va:,} 行 | 验证 {i_te - i_va:,} 行 | 测试 {N - i_te:,} 行")
+log(f"train {i_va:,} rows | validation {i_te - i_va:,} rows | test {N - i_te:,} rows")
 
-# ---------------------------------------------------------------- 5. 训练
+# ---------------------------------------------------------------- 5. Training
 def fit(feats):
     k = len(feats)
     types = ["c" if f in CATS else "q" for f in feats]
@@ -259,26 +263,26 @@ def fit(feats):
     b = xgb.train(PARAMS, dtr, ROUNDS, evals=[(dva, "valid")], early_stopping_rounds=ES, verbose_eval=200)
     n_best = b.best_iteration + 1
     del dtr, dva, b
-    final = xgb.train(PARAMS, qdm(0, i_te), int(n_best * 1.05))   # 用全部训练集重训
+    final = xgb.train(PARAMS, qdm(0, i_te), int(n_best * 1.05))   # refit on the whole training set
     dte = xgb.DMatrix(X[i_te:, :k], feature_names=feats, feature_types=types, enable_categorical=True)
     return final, final.predict(dte), n_best
 
 preds = {
-    "naive_lag28": np.nan_to_num(X[i_te:, col["lag_28"]]),     # 4 周前同一天 (两种 horizon 都合法)
-    "naive_last": np.nan_to_num(X[i_te:, col["olag_1"]]),      # 起点那天的销量; HZ=1 时就是"昨天"
-    "ma_28": np.nan_to_num(X[i_te:, col["rmean_28"]]),         # 截止起点的前 28 天均值
+    "naive_lag28": np.nan_to_num(X[i_te:, col["lag_28"]]),     # same day 4 weeks earlier (valid for both horizons)
+    "naive_last": np.nan_to_num(X[i_te:, col["olag_1"]]),      # sales on the origin day; with HZ=1 this is "yesterday"
+    "ma_28": np.nan_to_num(X[i_te:, col["rmean_28"]]),         # mean of the 28 days up to the origin
 }
 n_trees = {}
 for name, feats in [("xgb_M3_full", M3), ("xgb_M2_price_event", M2), ("xgb_M1_calendar", M1)]:
-    log(f"训练 {name} ({len(feats)} 个特征)")
+    log(f"training {name} ({len(feats)} features)")
     model, preds[name], n_trees[name] = fit(feats)
-    log(f"  {name}: {n_trees[name]} 棵树")
+    log(f"  {name}: {n_trees[name]} trees")
     if name == "xgb_M3_full":
         gain = pd.Series(model.get_score(importance_type="gain"))
         (gain / gain.sum()).sort_values(ascending=False).rename("gain_share").to_csv(OUT / "feature_importance.csv")
         model.save_model(OUT / "xgb_M3_full.json")
 
-# ---------------------------------------------------------------- 6. 评估
+# ---------------------------------------------------------------- 6. Evaluation
 te = pd.DataFrame({"id": sales.id.to_numpy()[sid[i_te:]], "d_num": d_num[i_te:], "y": y[i_te:], **preds})
 te["date"] = date.to_numpy()[te.d_num - 1]
 te["month"] = te.date.dt.to_period("M").astype(str)
@@ -289,9 +293,9 @@ te["store"] = sales.store_id.to_numpy()[sid[i_te:]]
 te["dept"] = sales.dept_id.to_numpy()[sid[i_te:]]
 te["cat"] = sales.cat_id.to_numpy()[sid[i_te:]]
 te["state"] = sales.state_id.to_numpy()[sid[i_te:]]
-# 销量分层: 按训练期日均销量分三档
+# volume buckets: three tiers by mean daily sales in the training period
 with warnings.catch_warnings():
-    warnings.simplefilter("ignore", RuntimeWarning)   # 测试期才上架的商品整行是 NaN
+    warnings.simplefilter("ignore", RuntimeWarning)   # items launched only in the test period are all NaN
     train_mean = np.nanmean(Sn[:, :TRAIN_END], axis=1)
 q = np.nanquantile(train_mean, [1 / 3, 2 / 3])
 bucket = np.where(np.isnan(train_mean), "new_item",
@@ -311,7 +315,7 @@ def scores(g):
 
 overall = scores(te)
 daily = te.groupby("date")[["y"] + models].sum()
-open_days = daily[~((daily.index.month == 12) & (daily.index.day == 25))]   # 圣诞节闭店, 销量≈0, 会让 MAPE 爆掉
+open_days = daily[~((daily.index.month == 12) & (daily.index.day == 25))]   # stores close on Christmas; sales ≈ 0 would blow up MAPE
 for m in models:
     e = daily[m] - daily.y
     overall.loc["Daily_total_RMSE", m] = np.sqrt((e ** 2).mean())
@@ -320,16 +324,17 @@ for m in models:
     overall.loc["Daily_total_R2_exXmas", m] = 1 - (eo ** 2).sum() / ((open_days.y - open_days.y.mean()) ** 2).sum()
 overall = overall.T
 
-# WRMSSE (M5 官方指标): RMSE / WAPE 把每条序列一视同仁, 但一条日均卖 300 件的序列和
-# 一条日均卖 0.3 件的序列对生意的意义完全不同。WRMSSE 先用每条序列自己的历史波动
-# (naive 随机游走的一步误差) 做缩放, 再按"预测起点前 28 天的销售额"加权, 最后在 12 个
-# 聚合层级 (总体 / 州 / 门店 / 品类 / 部门 / ... / item-store) 上取平均。
-# 权重和缩放分母都按 28 天的滚动窗口逐个重算, 只用窗口起点之前的数据。
-log("计算 WRMSSE")
+# WRMSSE (official M5 metric): RMSE / WAPE treat every series alike, but a series that sells 300 units a day
+# matters far more to the business than one that sells 0.3. WRMSSE first scales each series by its own
+# historical volatility (the one-step error of a naive random walk), then weights it by "dollar sales in the
+# 28 days before the forecast origin", and finally averages over 12 aggregation levels
+# (total / state / store / category / department / ... / item-store).
+# Weights and scaling denominators are recomputed for each 28-day rolling window, using only data before the window starts.
+log("computing WRMSSE")
 origins = list(range(TRAIN_END, D, H))
 
 def as_matrix(v):
-    """长表上的预测向量 -> (序列, 测试期天数) 矩阵; 未上架的格子记 0 (实际销量也是 0)"""
+    """prediction vector on the long table -> (series, test days) matrix; cells before launch are 0 (actual sales are 0 too)"""
     M = np.zeros((n, D - TRAIN_END), np.float32)
     M[sid[i_te:], d_num[i_te:] - 1 - TRAIN_END] = np.nan_to_num(np.asarray(v, np.float32))
     return M
@@ -358,7 +363,7 @@ breakdowns = {k: wape_by(k) for k in ["month", "window", "snap", "is_event", "st
 for k, df in breakdowns.items():
     df.to_csv(OUT / f"wape_by_{k}.csv")
 
-# 训练期的描述统计 (给 findings 用)
+# descriptive statistics of the training period (for the findings)
 trn = pd.DataFrame({"y": y[:i_te], "snap": X[:i_te, col["snap"]], "is_event": X[:i_te, col["is_event"]],
                     "wday": X[:i_te, col["wday"]], "dept": sales.dept_id.to_numpy()[sid[:i_te]]})
 desc = {
@@ -372,22 +377,22 @@ desc = {
 te.drop(columns=["date"]).to_csv(OUT / "test_predictions.csv.gz", index=False)
 
 pd.set_option("display.width", 160, "display.max_columns", 20)
-print("\n===== 测试集总体指标 =====")
+print("\n===== Overall test-set metrics =====")
 print(overall.round(4))
-print("\n----- WRMSSE 分层级 (按销售额加权的 RMSSE) -----")
+print("\n----- WRMSSE by level (dollar-weighted RMSSE) -----")
 print(wrmsse_level.round(4))
-print("\n----- WRMSSE 分窗口 (28 天一个滚动窗口) -----")
+print("\n----- WRMSSE by window (one 28-day rolling window each) -----")
 print(wrmsse_window.round(4))
-print("\n----- 各层级的序列数与权重集中度 -----")
+print("\n----- Number of series and weight concentration by level -----")
 print(wrmsse_weights)
-print("\nWRMSSE 越小越好; = 1 表示误差和历史上的朴素随机游走一步预测相当")
+print("\nLower WRMSSE is better; 1 means the error equals a historical one-step naive random-walk forecast")
 if wrmsse_note:
     print(wrmsse_note)
 for k in ["volume", "snap", "is_event", "cat", "dept", "state", "store", "month"]:
     print(f"\n----- WAPE by {k} -----")
     print(breakdowns[k].round(4))
-print("\n----- 特征重要性 (M3, gain 占比) -----")
+print("\n----- Feature importance (M3, share of gain) -----")
 print(pd.read_csv(OUT / "feature_importance.csv", index_col=0).head(15).round(4))
-print("\n----- 训练期描述统计 -----")
+print("\n----- Training-period descriptive statistics -----")
 print(json.dumps(desc, indent=2, ensure_ascii=False))
-log(f"完成, 结果在 {OUT}")
+log(f"done, results in {OUT}")
