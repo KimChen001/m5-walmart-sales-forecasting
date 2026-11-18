@@ -1,5 +1,5 @@
 #!/bin/bash
-# 在 ORCD Engaging 登录节点上运行一次: bash cluster/setup_env.sh
+# Run once on an ORCD Engaging login node: bash cluster/setup_env.sh
 set -e
 module load miniforge
 eval "$(conda shell.bash hook)"
