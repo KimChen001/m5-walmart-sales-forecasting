@@ -1,0 +1,13 @@
+level,series,scored,dropped_no_scale,weight_share_top10pct,same_as
+L1_total,1,1,0,1.0,
+L2_state,3,3,0,0.4686,
+L3_store,10,10,0,0.2064,
+L4_cat,3,3,0,0.6769,
+L5_dept,7,7,0,0.457,
+L6_state_cat,9,9,0,0.3008,
+L7_state_dept,20,20,0,0.3344,
+L8_store_cat,30,30,0,0.2925,
+L9_store_dept,63,63,0,0.3849,
+L10_item,1281,1281,0,0.4576,
+L11_item_state,2773,2773,0,0.4269,
+L12_item_store,6638,6637,0,0.3964,

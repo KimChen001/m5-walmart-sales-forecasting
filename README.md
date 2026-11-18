@@ -160,11 +160,12 @@ Both models report rolling WRMSSE across 12 M5 hierarchy levels. XGBoost zero-fi
 
 ## Code by model
 
-Every model in the presentation has its code here. The XGBoost script is at the repository root, the TimesFM 3.0 scripts are covered in [Reproduce TimesFM 3.0](#reproduce-timesfm-30), and the team's notebooks are in [`notebooks/`](notebooks). Open each notebook from that folder: it reads the three CSVs from the repository root.
+Every model in the presentation has its code here. The XGBoost script is at the repository root, the TimesFM 3.0 scripts are covered in [Reproduce TimesFM 3.0](#reproduce-timesfm-30), and all notebooks, including the XGBoost results notebook, are in [`notebooks/`](notebooks). Open each notebook from that folder: it reads its inputs from the repository root.
 
 | File | Model | Forecast task | Run notes |
 |---|---|---|---|
 | [`xgb_forecast.py`](xgb_forecast.py) | XGBoost M1–M3 and baselines on all 30,490 series; the source of the XGBoost results above, archived in [`results/xgb-29323394/`](results/xgb-29323394) | 28 days from each of 14 origins, and next day, training to `d_1553` | 3 h 15 min for both schedules on 32 ORCD cores (job `29323394`); run with [`cluster/run_xgb_both.sbatch`](cluster/run_xgb_both.sbatch) |
+| [`xgboost_full_panel.ipynb`](notebooks/xgboost_full_panel.ipynb) | XGBoost results on the full panel: the four metrics for both schedules, WRMSSE at each of the 12 levels and by test window, daily totals, feature importance, and error by sales volume, department and store | Both schedules, from job `29323394` | Reads the archived results in `results/xgb-29323394/`, so it runs in seconds without a cluster |
 | [`exploratory_analysis.ipynb`](notebooks/exploratory_analysis.ipynb) | Data exploration behind the data slide | — | No model training |
 | [`regression_ols_ridge_lasso.ipynb`](notebooks/regression_ols_ridge_lasso.ipynb) | OLS, Ridge and LASSO, λ by 10-fold cross-validation | Next day, on 80,000 training and 20,000 test item-store-days sampled at random | 35 min on 32 ORCD cores |
 | [`lstm_d1553.ipynb`](notebooks/lstm_d1553.ipynb) | LSTM encoder–decoder, one network for all 30,490 series | 28 days from each of 14 origins, training to `d_1553` | About 5 min of training on one GPU; writes its test forecasts to `outputs/` |
