@@ -2,6 +2,11 @@
 
 **15.071 Project 1 · Predictive AI · November 20, 2026**
 
+<p align="center">
+  <a href="docs/overview.md"><img src="docs/project-overview.png" width="49%" alt="Slide 1: the replenishment problem, the M5 data, the models and the baselines"></a>
+  <a href="docs/overview.md#recommendation"><img src="docs/recommendation.png" width="49%" alt="Slide 10: why the V6 ensemble, inventory freed against today's rule, and the roll-out plan"></a>
+</p>
+
 We forecast daily unit sales for 30,490 item–store series in 10 Walmart stores to set safety stock. The best model, V6, has 8% less error than the stores' 28-day moving-average rule, which frees about **$148k** of inventory; re-forecasting XGBoost daily instead of every 4 weeks cuts its WRMSSE by **23%**.
 
 **Contents** · [Task and data](#task-and-data) · [Models and results](#models-and-results) · [Improvement: re-forecast daily](#improvement-re-forecast-daily) · [Run the code](#run-the-code) · [Repository map](#repository-map) · [Limitations](#limitations)
@@ -34,13 +39,17 @@ We forecast daily unit sales for 30,490 item–store series in 10 Walmart stores
 
 For TimesFM 3.0 V3 and V6, R² is OSR² (benchmarked on the training mean) and the test starts one day earlier. The LSTM is scored on all item–days, the others on days the item is on the shelf. OLS, Ridge and LASSO answer a next-day task on sampled rows ([notebook](notebooks/regression_ols_ridge_lasso.ipynb)).
 
+<p align="center"><img src="docs/accuracy-by-model.png" width="85%" alt="Bar charts of item-level R² and 12-level WRMSSE for each model, with XGBoost M3 re-forecast daily shown separately"></p>
+
 - **Recent sales are the signal.** Adding lagged sales to XGBoost lifts R² from 0.533 to 0.629 and cuts WRMSSE from 0.994 to 0.681; price, SNAP and events add almost nothing on their own.
 - **The trained models tie on single items and differ on totals.** They sit within 0.015 R² of each other, while the models that learn across series lead on WRMSSE.
 - **Business impact.** Safety stock scales with forecast error: V6 frees about $148k of inventory at a 95% in-stock target, or $37k a year in holding cost; XGBoost M3 frees $115k and needs no GPU. Assumptions are in the [business overview](docs/overview.md#business-impact).
 
 ## Improvement: re-forecast daily
 
-The same XGBoost M3 model and features, re-forecast every morning from yesterday's sales instead of every 4 weeks ([concept figure](docs/overview.md#the-improvement-re-forecast-daily)):
+The same XGBoost M3 model and features, re-forecast every morning from yesterday's sales instead of every 4 weeks:
+
+<p align="center"><img src="docs/improvement-daily.png" width="85%" alt="Two timelines of 28 days: one forecast every 4 weeks, so later days use older sales data, against a new forecast every morning that always uses yesterday's sales"></p>
 
 | XGBoost M3, all 30,490 series | R² ↑ | MAE ↓ | WAPE ↓ | WRMSSE ↓ |
 |---|---:|---:|---:|---:|
