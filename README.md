@@ -24,6 +24,8 @@ The project evaluates **TimesFM 3.0, XGBoost, OLS, and an LSTM neural network** 
 2. **Past that, complexity buys little.** XGBoost, the LSTM, TimesFM 3.0 and V6 all reach R² 0.63 to 0.64. TimesFM 3.0 has the highest R² of the single models, while the models that learn across series are better on store and state totals (WRMSSE 0.649 for recursive boosted trees, 0.660 for the LSTM and 0.681 for XGBoost, against 0.744 for TimesFM 3.0).
 3. **How TimesFM's output is read matters more than tuning the model.** Its raw outputs under-report right-skewed sales; reading them as a calibrated mean cut the total-sales bias from −7.0% to −0.8% and WRMSSE from 0.830 to 0.744.
 
+![Scatter of item-level R² against 12-level WRMSSE: the models that learn across series score best on totals, while TimesFM 3.0 and V6 have the highest R²](docs/accuracy-map.png)
+
 ### Business impact
 
 V6 forecasts with 8.0% less error than today's 28-day rule (RMSE 2.171 against 2.36). Safety stock scales with forecast error, so for the 10 stores and roughly $45M of annual sales in the data:
@@ -43,6 +45,8 @@ Assumptions: safety stock is 1.645 × the standard deviation of each item-store'
 ### Recommendation
 
 Adopt V6 for replenishment forecasts, starting with a pilot in one store per state against matched stores that stay on the 28-day rule. Judge it on in-stock rate, inventory value and food waste, not on forecast error alone. Every 4 weeks, rerun TimesFM, refit the trees and relearn the ensemble weights, and keep TimesFM alone as the fallback, since it delivers most of the gain by itself. Collect inventory data, so that stock-outs stop looking like zero demand. Re-forecasting more often is a further lever: moving XGBoost from a 28-day to a daily schedule cut its WRMSSE by 23% (see [Next-day forecasts](#next-day-forecasts)).
+
+![Recommendation slide: why the V6 ensemble, inventory freed against today's 28-day rule, and the roll-out plan](docs/recommendation.png)
 
 ## Run locally
 
