@@ -52,7 +52,7 @@ The slide deck reports the team's TimesFM 3.0 notebook run (V3: stock-out cleani
 | TimesFM 3.0 · V3 | 0.6415 | 0.988 | 75.5% | 0.744 |
 | **V6 · V3 plus recursive boosted trees** | **0.6425** | **0.984** | **75.2%** | **0.716** |
 
-OSR² measures error against the training-period mean rather than the test-period mean. The notebook's code is not yet in this repository.
+OSR² measures error against the training-period mean rather than the test-period mean. The notebook is [`notebooks/timesfm3_v3_v6.ipynb`](notebooks/timesfm3_v3_v6.ipynb).
 
 ### Next-day forecasts
 
@@ -117,4 +117,15 @@ The job first checks 16 series and then runs the full backtest, downloading the 
 
 Both models report rolling WRMSSE across 12 M5 hierarchy levels. XGBoost zero-fills positions outside its scored rows when constructing the WRMSSE panel. The adjusted TimesFM run scores its complete forecast panel, so the WRMSSE comparison retains that implementation difference.
 
-**Team contributions** · XGBoost by Zhixin. TimesFM 3.0 by Kayla, Zhixin, and Marco. Upcoming code contributions include OLS by Kayla and the neural network by Marco.
+## Team notebooks
+
+The other models in the presentation are in [`notebooks/`](notebooks). Open each notebook from that folder: it reads the three CSVs from the repository root.
+
+| Notebook | Model | Forecast task | Run notes |
+|---|---|---|---|
+| [`exploratory_analysis.ipynb`](notebooks/exploratory_analysis.ipynb) | Data exploration behind the data slide | — | No model training |
+| [`regression_ols_ridge_lasso.ipynb`](notebooks/regression_ols_ridge_lasso.ipynb) | OLS, Ridge and LASSO, λ by 10-fold cross-validation | Next day, on 80,000 training and 20,000 test item-store-days sampled at random | 35 min on 32 ORCD cores |
+| [`lstm_d1553.ipynb`](notebooks/lstm_d1553.ipynb) | LSTM encoder–decoder, one network for all 30,490 series | 28 days from each of 14 origins, training to `d_1553` | About 5 min of training on one GPU; writes its test forecasts to `outputs/` |
+| [`timesfm3_v3_v6.ipynb`](notebooks/timesfm3_v3_v6.ipynb) | TimesFM 3.0 V3, then V4 (with LASSO), V5 (fine-tuned output head) and V6 (ensemble with recursive boosted trees) | 28 days from each of 14 origins, training to `d_1552` | Imports `timesfm3`, installed as in the section above. Reads cached forecasts from `timesfm3_v3_forecasts_all/`, `timesfm3_v5_features_all/` and `timesfm3_v6_gbm_all/`; without them the TimesFM runs take several hours on a GPU |
+
+**Team contributions** · XGBoost by Zhixin. TimesFM 3.0 by Kayla, Zhixin, and Marco. Regression notebook by Kayla and LSTM notebook by Marco.
